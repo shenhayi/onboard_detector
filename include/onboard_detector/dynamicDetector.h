@@ -214,6 +214,7 @@ namespace onboardDetector{
         void depthPoseCB(const sensor_msgs::ImageConstPtr& img, const geometry_msgs::PoseStampedConstPtr& pose);
         void lidarCloudCB(const sensor_msgs::PointCloud2ConstPtr& cloudMsg);
         void depthOdomCB(const sensor_msgs::ImageConstPtr& img, const nav_msgs::OdometryConstPtr& odom);
+        void lidarPoseCB(const geometry_msgs::PoseStampedConstPtr& pose);
         void alignedDepthCB(const sensor_msgs::ImageConstPtr& img);
         void yoloDetectionCB(const vision_msgs::Detection2DArrayConstPtr& detections);
         void colorImgCB(const sensor_msgs::ImageConstPtr& img);
