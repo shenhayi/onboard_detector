@@ -659,7 +659,11 @@ namespace onboardDetector{
         // visualization timer
         this->visTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::visCB, this);
 
-        this->labelTimer_ = this->nh_.createTimer(ros::Duration(1.0), &dynamicDetector::labelCB, this);
+        // save pointcloud to pcd
+        this->saveTimer_ = this->nh_.createTimer(ros::Duration(1.0), &dynamicDetector::saveLidarCloudCB, this);
+
+        // save det boxes to json
+        this->labelTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::labelCB, this);
         
 		// get dynamic obstacle service
 		this->getDynamicObstacleServer_ = this->nh_.advertiseService("onboard_detector/get_dynamic_obstacles", &dynamicDetector::getDynamicObstacles, this);
@@ -802,9 +806,74 @@ namespace onboardDetector{
         this->yoloDetectionResults_ = *detections;
     }
 
+    void dynamicDetector::saveLidarCloudCB(const ros::TimerEvent& event){
+        if (!this->latest_cloud_) {
+            ROS_WARN("No point cloud received yet.");
+            return;
+        }
+        try {
+            if (this->hasSensorPose_){
+                // local cloud
+                pcl::PointCloud<pcl::PointXYZ>::Ptr tempCloud (new pcl::PointCloud<pcl::PointXYZ>());
+                pcl::fromROSMsg(*latest_cloud_, *tempCloud);
+                pcl::PointCloud<pcl::PointXYZ>::Ptr globalCloud (new pcl::PointCloud<pcl::PointXYZ>());
+
+                // transform
+                Eigen::Affine3d transform = Eigen::Affine3d::Identity();
+                transform.linear() = this->orientationLidar_;
+                transform.translation() = this->positionLidar_;
+
+                pcl::transformPointCloud(*tempCloud, *globalCloud, transform);
+
+                // save to pcd
+                boost::filesystem::path base_dir = boost::filesystem::path(this->dataSaveFolder_);
+                boost::filesystem::path pcd_folder_ = base_dir / "lidar";
+                if (!boost::filesystem::exists(pcd_folder_))
+                {
+                    if (!boost::filesystem::create_directory(pcd_folder_))
+                    {
+                        ROS_ERROR_STREAM("Failed to create PCD folder: " << pcd_folder_.string());
+                        return;
+                    }
+                    else
+                    {
+                        ROS_INFO_STREAM("Created PCD folder: " << pcd_folder_.string());
+                    }
+                }
+
+                std::string time_str = std::to_string(ros::Time::now().toNSec());
+                boost::filesystem::path pcd_file_path = pcd_folder_ / (time_str + ".pcd");
+
+                if(globalCloud && !globalCloud->empty()){
+                    if (pcl::io::savePCDFileBinary(pcd_file_path.string(), *globalCloud) == -1)
+                    {
+                        ROS_ERROR_STREAM("Save failed: " << pcd_file_path.string());
+                    }
+                    else
+                    {
+                        ROS_INFO_STREAM("Labeled PCL saved: " << pcd_file_path.string());
+                    }
+                }
+                else{
+                    ROS_ERROR("Failed to save lidar cloud to: %s", pcd_file_path.string().c_str());
+                }
+            }
+        }
+        catch (const pcl::PCLException& e) {
+            ROS_ERROR("PCL Exception during conversion: %s", e.what());
+        }
+        catch (const std::exception& e) {
+            ROS_ERROR("Standard Exception during conversion: %s", e.what());
+        }
+        catch (...) {
+            ROS_ERROR("Unknown error during point cloud conversion.");
+        }
+    }
+
     void dynamicDetector::lidarCloudCB(const sensor_msgs::PointCloud2ConstPtr& cloudMsg){
         try {
             if (this->hasSensorPose_){
+                this->latest_cloud_ = cloudMsg;
                 // local cloud
                 pcl::PointCloud<pcl::PointXYZ>::Ptr tempCloud (new pcl::PointCloud<pcl::PointXYZ>());
                 pcl::fromROSMsg(*cloudMsg, *tempCloud);
@@ -1093,7 +1162,7 @@ namespace onboardDetector{
         std::string time_str = std::to_string(ros::Time::now().toNSec());
         boost::filesystem::path base_dir = boost::filesystem::path(this->dataSaveFolder_);
         boost::filesystem::path json_folder_ = base_dir / "dyn_box";
-        boost::filesystem::path pcd_folder_ = base_dir / "lidar";
+        // boost::filesystem::path pcd_folder_ = base_dir / "lidar";
 
         if (!boost::filesystem::exists(json_folder_))
         {
@@ -1108,23 +1177,23 @@ namespace onboardDetector{
             }
         }
 
-        if (!boost::filesystem::exists(pcd_folder_))
-        {
-            if (!boost::filesystem::create_directory(pcd_folder_))
-            {
-                ROS_ERROR_STREAM("Failed to create PCD folder: " << pcd_folder_.string());
-                return;
-            }
-            else
-            {
-                ROS_INFO_STREAM("Created PCD folder: " << pcd_folder_.string());
-            }
-        }
+        // if (!boost::filesystem::exists(pcd_folder_))
+        // {
+        //     if (!boost::filesystem::create_directory(pcd_folder_))
+        //     {
+        //         ROS_ERROR_STREAM("Failed to create PCD folder: " << pcd_folder_.string());
+        //         return;
+        //     }
+        //     else
+        //     {
+        //         ROS_INFO_STREAM("Created PCD folder: " << pcd_folder_.string());
+        //     }
+        // }
 
-        boost::filesystem::path pcd_file_path = pcd_folder_ / ("lidar_cloud_" + time_str + ".pcd");
+        // boost::filesystem::path pcd_file_path = pcd_folder_ / ("lidar_cloud_" + time_str + ".pcd");
 
 
-        boost::filesystem::path json_file_path = json_folder_ / ("boxes_json_" + time_str + ".json");
+        boost::filesystem::path json_file_path = json_folder_ / (time_str + ".json");
     
         std::ofstream json_file(json_file_path.string().c_str(), std::ios::out);
         if (!json_file.is_open())
@@ -1167,21 +1236,21 @@ namespace onboardDetector{
             ROS_INFO_STREAM("JSON saved: " << json_file_path.string());
         }
 
-        if (lidarCloud_ && !lidarCloud_->empty())
-        {
-            if (pcl::io::savePCDFileBinary(pcd_file_path.string(), *lidarCloud_) == -1)
-            {
-                ROS_ERROR_STREAM("Save failed: " << pcd_file_path.string());
-            }
-            else
-            {
-                ROS_INFO_STREAM("Labeled PCL saved: " << pcd_file_path.string());
-            }
-        }
-        else
-        {
-            ROS_WARN("Empty pointcloud");
-        }
+        // if (lidarCloud_ && !lidarCloud_->empty())
+        // {
+        //     if (pcl::io::savePCDFileBinary(pcd_file_path.string(), *lidarCloud_) == -1)
+        //     {
+        //         ROS_ERROR_STREAM("Save failed: " << pcd_file_path.string());
+        //     }
+        //     else
+        //     {
+        //         ROS_INFO_STREAM("Labeled PCL saved: " << pcd_file_path.string());
+        //     }
+        // }
+        // else
+        // {
+        //     ROS_WARN("Empty pointcloud");
+        // }
     }
 
     void dynamicDetector::uvDetect(){

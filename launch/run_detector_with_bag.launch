@@ -1,4 +1,6 @@
 <launch>
+	<param name="use_sim_time" value="true" />
+
 	<rosparam file="$(find onboard_detector)/cfg/detector_param.yaml" ns="/onboard_detector" />
 	<node pkg="onboard_detector" type="detector_node" name="detector_node" output="screen" />
     <!-- <node pkg="onboard_detector" type="yolo_detector_node.py" name="yolo_detector_node" output="screen" /> -->
@@ -7,7 +9,8 @@
 	<!-- <node name="rviz" pkg="rviz" type="rviz" args="-d $(find onboard_detector)/rviz/detector.rviz"/> -->
 	<node name="rviz" pkg="rviz" type="rviz" args="-d $(find onboard_detector)/rviz/detector_lidar.rviz"/>
 
-	<arg name="bag_file" default="/home/haoyus/data/drone_cage_4.bag" />
-  	<arg name="start_time" default="20.0" />
+	<!-- <arg name="bag_file" default="/home/haoyus/data/drone_cage_4.bag" /> -->
+	<arg name="bag_file" default="/home/haoyus/data/mill19_dyn_benck_2.bag" />
+  	<arg name="start_time" default="0.0" />
   	<node pkg="rosbag" type="play" name="rosbag_play" args="$(arg bag_file) --clock --start $(arg start_time)" output="screen" />
 </launch>
