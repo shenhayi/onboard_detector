@@ -1177,22 +1177,6 @@ namespace onboardDetector{
             }
         }
 
-        // if (!boost::filesystem::exists(pcd_folder_))
-        // {
-        //     if (!boost::filesystem::create_directory(pcd_folder_))
-        //     {
-        //         ROS_ERROR_STREAM("Failed to create PCD folder: " << pcd_folder_.string());
-        //         return;
-        //     }
-        //     else
-        //     {
-        //         ROS_INFO_STREAM("Created PCD folder: " << pcd_folder_.string());
-        //     }
-        // }
-
-        // boost::filesystem::path pcd_file_path = pcd_folder_ / ("lidar_cloud_" + time_str + ".pcd");
-
-
         boost::filesystem::path json_file_path = json_folder_ / (time_str + ".json");
     
         std::ofstream json_file(json_file_path.string().c_str(), std::ios::out);
@@ -1235,22 +1219,6 @@ namespace onboardDetector{
             json_file.close();
             ROS_INFO_STREAM("JSON saved: " << json_file_path.string());
         }
-
-        // if (lidarCloud_ && !lidarCloud_->empty())
-        // {
-        //     if (pcl::io::savePCDFileBinary(pcd_file_path.string(), *lidarCloud_) == -1)
-        //     {
-        //         ROS_ERROR_STREAM("Save failed: " << pcd_file_path.string());
-        //     }
-        //     else
-        //     {
-        //         ROS_INFO_STREAM("Labeled PCL saved: " << pcd_file_path.string());
-        //     }
-        // }
-        // else
-        // {
-        //     ROS_WARN("Empty pointcloud");
-        // }
     }
 
     void dynamicDetector::uvDetect(){
