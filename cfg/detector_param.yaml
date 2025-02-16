@@ -1,10 +1,10 @@
-localization_mode: 2 # 0: pose (default) 1: odom
-data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/mill19_2nd_2
+localization_mode: 0 # 0: pose (default) 1: odom
+data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/mill19_benck_4
 eval: true
 
 # ROS Topics
-depth_image_topic: /fakecamera/depth/image_rect_raw
-color_image_topic: /fakecamera/color/image_raw
+depth_image_topic: /camera/depth/image_rect_raw
+color_image_topic: /camera/color/image_raw
 lidar_pointcloud_topic: /pointcloud
 pose_topic: /mavros/local_position/pose
 odom_topic: /mavros/local_position/odom
@@ -43,7 +43,7 @@ roof_height: 2.0 # relative height of roof to remove roof points
 
 # DBSCAN visual param
 voxel_occupied_thresh: 5 # min num of points for a voxel to be occupied in voxel filter
-dbscan_min_points_cluster: 50 # 20: 4.0m range; 30: 3.5m range 40: 3.0m range
+dbscan_min_points_cluster: 20 # 20: 4.0m range; 30: 3.5m range 40: 3.0m range
 dbscan_search_range_epsilon: 0.05 # searching range radius
 
 # DBSCAN LiDAR param
