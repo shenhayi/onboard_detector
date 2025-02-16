@@ -211,6 +211,8 @@ namespace onboardDetector{
         vision_msgs::Detection2DArray yoloDetectionResults_; // yolo detected 2D results
         cv::Mat detectedColorImage_;
 
+        bool evalMode_;
+
     public:
         dynamicDetector();
         dynamicDetector(const ros::NodeHandle& nh);

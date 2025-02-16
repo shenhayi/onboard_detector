@@ -1,10 +1,11 @@
 localization_mode: 0 # 0: pose (default) 1: odom
-data_save_folder: /home/haoyus/label_data/mill19_benck_2_3
+data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/drone_cage_3
+eval: eval
 
 # ROS Topics
 depth_image_topic: /camera/depth/image_rect_raw
 color_image_topic: /camera/color/image_raw
-lidar_pointcloud_topic: /pointcloud
+lidar_pointcloud_topic: /fakepointcloud
 pose_topic: /mavros/local_position/pose
 odom_topic: /mavros/local_position/odom
 
@@ -46,10 +47,10 @@ dbscan_min_points_cluster: 50 # 20: 4.0m range; 30: 3.5m range 40: 3.0m range
 dbscan_search_range_epsilon: 0.05 # searching range radius
 
 # DBSCAN LiDAR param
-lidar_DBSCAN_min_points: 8
+lidar_DBSCAN_min_points: 6
 lidar_DBSCAN_epsilon: 0.05
 downsample_threshold: 3500 # threshold for downsampling
-gaussian_downsample_rate: 6
+gaussian_downsample_rate: 100
 
 # LiDAR Visual Filtering
 filtering_BBox_IOU_threshold: 0.2

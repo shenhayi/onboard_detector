@@ -555,6 +555,15 @@ namespace onboardDetector{
             }
             std::cout << "]." << std::endl;
         }
+
+        // eval or not 
+        if (not this->nh_.getParam(this->ns_ + "/eval", this->evalMode_)){
+            this->evalMode_ = false;
+            std::cout << this->hint_ << ": No eval mode parameter found. Use default: false." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Eval mode is set to: " << this->evalMode_ << std::endl;
+        }
     }
 
     void dynamicDetector::registerPub(){
@@ -658,15 +667,16 @@ namespace onboardDetector{
     
         // visualization timer
         this->visTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::visCB, this);
-
-        // save pointcloud to pcd
-        this->saveTimer_ = this->nh_.createTimer(ros::Duration(1.0), &dynamicDetector::saveLidarCloudCB, this);
-
-        // save det boxes to json
-        this->labelTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::labelCB, this);
         
 		// get dynamic obstacle service
 		this->getDynamicObstacleServer_ = this->nh_.advertiseService("onboard_detector/get_dynamic_obstacles", &dynamicDetector::getDynamicObstacles, this);
+        if(this->evalMode_){
+        // save pointcloud to pcd
+        // this->saveTimer_ = this->nh_.createTimer(ros::Duration(1.0), &dynamicDetector::saveLidarCloudCB, this);
+
+        // save det boxes to json
+        this->labelTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::labelCB, this);
+        }
     }
 
     bool dynamicDetector::getDynamicObstacles(onboard_detector::GetDynamicObstacles::Request& req, 
