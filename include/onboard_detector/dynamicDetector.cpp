@@ -112,6 +112,15 @@ namespace onboardDetector{
                 cout << this->hint_ << ": Odom topic: " << this->odomTopicName_ << endl;
             }
         }
+        if(this->localizationMode_ == 2){
+            if (not this->nh_.getParam(this->ns_ + "/pose_topic", this->poseTopicName_)){
+                this->poseTopicName_ = "/CERLAB/quadcopter/pose";
+                cout << this->hint_ << ": No pose topic name. Use default: /CERLAB/quadcopter/pose" << endl;
+            }
+            else{
+                cout << this->hint_ << ": Pose topic: " << this->poseTopicName_ << endl;
+            } 
+        }
 
         // depth intrinsics
         std::vector<double> depthIntrinsics (4);
@@ -639,6 +648,20 @@ namespace onboardDetector{
             this->depthOdomSync_.reset(new message_filters::Synchronizer<depthOdomSync>(depthOdomSync(100), *this->depthSub_, *this->odomSub_));
             this->depthOdomSync_->registerCallback(boost::bind(&dynamicDetector::depthOdomCB, this, _1, _2));
         }
+        else if (this->localizationMode_ == 2){
+            // Initialization code, e.g. in constructor:
+            this->poseSub_.reset(
+                new message_filters::Subscriber<geometry_msgs::PoseStamped>(
+                    this->nh_,
+                    this->poseTopicName_,
+                    30
+                )
+            );
+            // Register your callback with the message_filters subscriber
+            this->poseSub_->registerCallback(
+                boost::bind(&dynamicDetector::lidarPoseCB, this, _1)
+            );
+        }
         else{
             ROS_ERROR("[dynamicDetector]: Invalid localization mode!");
             exit(0);
@@ -800,6 +823,16 @@ namespace onboardDetector{
         this->positionColor_(2) = camPoseColorMatrix(2, 3);
         this->orientationColor_ = camPoseColorMatrix.block<3, 3>(0, 0);
 
+        this->positionLidar_(0) = lidarPoseMatrix(0, 3);
+        this->positionLidar_(1) = lidarPoseMatrix(1, 3);
+        this->positionLidar_(2) = lidarPoseMatrix(2, 3);
+        this->orientationLidar_ = lidarPoseMatrix.block<3, 3>(0, 0);
+        this->hasSensorPose_ = true;
+    }
+
+    void dynamicDetector::lidarPoseCB(const geometry_msgs::PoseStampedConstPtr& pose){
+        Eigen::Matrix4d lidarPoseMatrix;
+        this->getLidarPose(pose, lidarPoseMatrix);
         this->positionLidar_(0) = lidarPoseMatrix(0, 3);
         this->positionLidar_(1) = lidarPoseMatrix(1, 3);
         this->positionLidar_(2) = lidarPoseMatrix(2, 3);

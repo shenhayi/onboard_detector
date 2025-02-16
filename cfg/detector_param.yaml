@@ -1,11 +1,11 @@
-localization_mode: 0 # 0: pose (default) 1: odom
-data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/drone_cage_3
-eval: eval
+localization_mode: 2 # 0: pose (default) 1: odom
+data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/mill19_2nd_2
+eval: true
 
 # ROS Topics
-depth_image_topic: /camera/depth/image_rect_raw
-color_image_topic: /camera/color/image_raw
-lidar_pointcloud_topic: /fakepointcloud
+depth_image_topic: /fakecamera/depth/image_rect_raw
+color_image_topic: /fakecamera/color/image_raw
+lidar_pointcloud_topic: /pointcloud
 pose_topic: /mavros/local_position/pose
 odom_topic: /mavros/local_position/odom
 
