@@ -1019,7 +1019,7 @@ namespace onboardDetector{
         this->lidarDetectionTime_ = (this->lidarDetectionTime_ * this->lidarDetectCount_ + currentDetectionTime) / (this->lidarDetectCount_ + 1);
         this->lidarDetectCount_++;
 
-        ROS_INFO("Current lidar detection time: %.8f sec, Global average lidar detection time: %.8f sec", currentDetectionTime, this->lidarDetectionTime_);  
+        ROS_INFO("Average lidar detection time: %.8f sec", this->lidarDetectionTime_);  
     }
 
     void dynamicDetector::detectionCB(const ros::TimerEvent&){
@@ -1033,7 +1033,7 @@ namespace onboardDetector{
         this->visualDetectionTime_ = (this->visualDetectionTime_ * this->visualDetectCount_ + currentDetectionTime) / (this->visualDetectCount_ + 1);
         this->visualDetectCount_++;
         
-        ROS_INFO("Current visual depth detection time: %.8f sec, Global average detection time: %.8f sec", currentDetectionTime, this->visualDetectionTime_);
+        ROS_INFO("Average visual detection time: %.8f sec", this->visualDetectionTime_);
 
         this->filterLVBBoxes();
         this->newDetectFlag_ = true; // get a new detection
@@ -1059,7 +1059,7 @@ namespace onboardDetector{
         this->trackingTime_ = (this->trackingTime_ * this->trackingCount_ + currentDetectionTime) / (this->trackingCount_ + 1);
         this->trackingCount_++;
         
-        ROS_INFO("Current tracking time: %.8f sec, Global average tracking time: %.8f sec", currentDetectionTime, this->trackingTime_);
+        ROS_INFO("Average tracking time: %.8f sec", this->trackingTime_);
     }
 
     void dynamicDetector::classificationCB(const ros::TimerEvent&){
@@ -1552,11 +1552,12 @@ namespace onboardDetector{
             processedLidarBBoxes[i] = true;
         }
         this->filteredBBoxesBeforeYolo_ = filteredBBoxesTemp; // for visualization
+
         ros::Time end = ros::Time::now();
         double fusionTime = (end - start).toSec();
         this->fusionTime_ = (this->fusionTime_ * this->fusionCount_ + fusionTime) / (this->fusionCount_ + 1);
         this->fusionCount_++;
-        ROS_INFO("Current fusion time: %.8f sec, Global average fusion time: %.8f sec", fusionTime, this->fusionTime_);
+        ROS_INFO("Average fusion time: %.8f sec", this->fusionTime_);
 
         // STEP 5: If YOLO detection results are available, improve the classification and splitting potential incorrect bboxes
         if (this->yoloDetectionResults_.detections.size() != 0){
