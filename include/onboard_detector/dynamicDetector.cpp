@@ -1011,21 +1011,36 @@ namespace onboardDetector{
     }
 
     void dynamicDetector::lidarDetectionCB(const ros::TimerEvent&){
+        ros::Time start = ros::Time::now();
         this->lidarDetect();
+        ros::Time end = ros::Time::now();
+        double currentDetectionTime = (end - start).toSec();
+
+        this->lidarDetectionTime_ = (this->lidarDetectionTime_ * this->lidarDetectCount_ + currentDetectionTime) / (this->lidarDetectCount_ + 1);
+        this->lidarDetectCount_++;
+
+        ROS_INFO("Current lidar detection time: %.8f sec, Global average lidar detection time: %.8f sec", currentDetectionTime, this->lidarDetectionTime_);  
     }
 
     void dynamicDetector::detectionCB(const ros::TimerEvent&){
         // detection thread
+        ros::Time start = ros::Time::now();
         this->dbscanDetect();
         this->uvDetect();
-        // ros::Time start = ros::Time::now();
+        ros::Time end = ros::Time::now();
+        double currentDetectionTime = (end - start).toSec();
+        
+        this->visualDetectionTime_ = (this->visualDetectionTime_ * this->visualDetectCount_ + currentDetectionTime) / (this->visualDetectCount_ + 1);
+        this->visualDetectCount_++;
+        
+        ROS_INFO("Current visual depth detection time: %.8f sec, Global average detection time: %.8f sec", currentDetectionTime, this->visualDetectionTime_);
+
         this->filterLVBBoxes();
-        // ros::Time end = ros::Time::now();
-        // ROS_INFO("filtering time: %f", (end - start).toSec());
         this->newDetectFlag_ = true; // get a new detection
     }
 
     void dynamicDetector::trackingCB(const ros::TimerEvent&){
+        ros::Time start = ros::Time::now();
         // data association thread
         std::vector<int> bestMatch; // for each current detection, which index of previous obstacle match
         this->boxAssociation(bestMatch);
@@ -1038,6 +1053,13 @@ namespace onboardDetector{
             this->pcHist_.clear();
             this->pcCenterHist_.clear();
         }
+        ros::Time end = ros::Time::now();
+        double currentDetectionTime = (end - start).toSec();
+        
+        this->trackingTime_ = (this->trackingTime_ * this->trackingCount_ + currentDetectionTime) / (this->trackingCount_ + 1);
+        this->trackingCount_++;
+        
+        ROS_INFO("Current tracking time: %.8f sec, Global average tracking time: %.8f sec", currentDetectionTime, this->trackingTime_);
     }
 
     void dynamicDetector::classificationCB(const ros::TimerEvent&){
@@ -1352,6 +1374,7 @@ namespace onboardDetector{
 
         // STEP 1: Get visual bboxes by fusing visual bounding boxes
         // find best IOU match for both uv and dbscan. If they are best for each other, then add to filtered bbox and fuse.
+        ros::Time start = ros::Time::now();
         for (size_t i=0 ; i<this->uvBBoxes_.size(); ++i){
             onboardDetector::box3D uvBBox = this->uvBBoxes_[i];
             double bestIOUForUVBBox, bestIOUForDBBBox;
@@ -1529,7 +1552,11 @@ namespace onboardDetector{
             processedLidarBBoxes[i] = true;
         }
         this->filteredBBoxesBeforeYolo_ = filteredBBoxesTemp; // for visualization
-
+        ros::Time end = ros::Time::now();
+        double fusionTime = (end - start).toSec();
+        this->fusionTime_ = (this->fusionTime_ * this->fusionCount_ + fusionTime) / (this->fusionCount_ + 1);
+        this->fusionCount_++;
+        ROS_INFO("Current fusion time: %.8f sec, Global average fusion time: %.8f sec", fusionTime, this->fusionTime_);
 
         // STEP 5: If YOLO detection results are available, improve the classification and splitting potential incorrect bboxes
         if (this->yoloDetectionResults_.detections.size() != 0){

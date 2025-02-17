@@ -1,6 +1,6 @@
 localization_mode: 0 # 0: pose (default) 1: odom
 data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/mill19_benck_4
-eval: true
+eval: false
 
 # ROS Topics
 depth_image_topic: /camera/depth/image_rect_raw

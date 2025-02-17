@@ -44,6 +44,8 @@ class yolo_detector:
         self.img_pub = rospy.Publisher("yolo_detector/detected_image", Image, queue_size=10)
         self.bbox_pub = rospy.Publisher("yolo_detector/detected_bounding_boxes", Detection2DArray, queue_size=10)
         self.time_pub = rospy.Publisher("yolo_detector/yolo_time", std_msgs.msg.Float64, queue_size=1)
+        self.detect_time = 0
+        self.detect_count = 0
 
         # timer
         rospy.Timer(rospy.Duration(0.033), self.detect_callback)
@@ -61,6 +63,11 @@ class yolo_detector:
             self.detected_img, self.detected_bboxes = self.postprocess(self.img, output)
             self.img_detected = True
         endTime = rospy.Time.now()
+        current_time = (endTime-startTime).to_sec()
+        self.detect_time = (self.detect_time * self.detect_count + current_time) / (self.detect_count + 1)
+        self.detect_count += 1
+        rospy.loginfo("yolo average detect time: %.8f", self.detect_time)
+        
         self.time_pub.publish((endTime-startTime).to_sec())
         
 

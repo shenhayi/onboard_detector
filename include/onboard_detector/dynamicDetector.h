@@ -211,7 +211,23 @@ namespace onboardDetector{
         vision_msgs::Detection2DArray yoloDetectionResults_; // yolo detected 2D results
         cv::Mat detectedColorImage_;
 
+        // EVALUATION
         bool evalMode_;
+        double lidarDetectionTime_;
+        double lidarDetectCount_;
+
+        double visualDetectionTime_;
+        double visualDetectCount_;
+
+        double fusionTime_;
+        double fusionCount_;
+
+        double colorDetectionTime_;
+        double colorDetectCount_;
+
+        double trackingTime_;
+        double trackingCount_;
+    
 
     public:
         dynamicDetector();
