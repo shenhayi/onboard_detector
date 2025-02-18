@@ -227,6 +227,9 @@ namespace onboardDetector{
 
         double trackingTime_;
         double trackingCount_;
+
+        double classificationTime_;
+        double classificationCount_;
     
 
     public:

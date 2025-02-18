@@ -1063,6 +1063,7 @@ namespace onboardDetector{
     }
 
     void dynamicDetector::classificationCB(const ros::TimerEvent&){
+        ros::Time start = ros::Time::now();
         // Identification thread
         std::vector<onboardDetector::box3D> dynamicBBoxesTemp;
 
@@ -1196,6 +1197,11 @@ namespace onboardDetector{
         }
 
         this->dynamicBBoxes_ = dynamicBBoxesTemp;
+        ros::Time end = ros::Time::now();
+        double classTime  = (end - start).toSec();
+        this->classificationTime_ = (this->classificationTime_ * this->classificationCount_ + classTime) / (this->classificationCount_ + 1);
+        this->classificationCount_++;
+        ROS_INFO("Average classification time: %.8f sec", this->classificationTime_);
     }
 
     void dynamicDetector::visCB(const ros::TimerEvent&){
