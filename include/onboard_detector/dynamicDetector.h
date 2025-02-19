@@ -79,6 +79,7 @@ namespace onboardDetector{
         ros::Publisher velVisPub_;
         ros::Publisher downSamplePointsPub_;
         ros::Publisher rawDynamicPointsPub_;
+        ros::Publisher rawPointsPub_;
         ros::ServiceServer getDynamicObstacleServer_;
     
         // DETECTOR

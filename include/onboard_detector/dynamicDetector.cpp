@@ -634,9 +634,11 @@ namespace onboardDetector{
         this->velVisPub_ = this->nh_.advertise<visualization_msgs::MarkerArray>(this->ns_ + "/velocity_visualizaton", 10);
 
         // downsample points visualization pub
-        this->downSamplePointsPub_ = this->nh_.advertise<sensor_msgs::PointCloud2>(this->ns_ + "/downsampled_point_cloud", 10);
+        // this->downSamplePointsPub_ = this->nh_.advertise<sensor_msgs::PointCloud2>(this->ns_ + "/downsampled_point_cloud", 10);
 
         this->rawDynamicPointsPub_ = this->nh_.advertise<sensor_msgs::PointCloud2>(this->ns_ + "/raw_dynamic_point_cloud", 10);
+
+        this->rawPointsPub_ = this->nh_.advertise<sensor_msgs::PointCloud2>(this->ns_ + "/raw_point_cloud", 10);
     }   
 
     void dynamicDetector::registerCallback(){
@@ -937,6 +939,12 @@ namespace onboardDetector{
                 transform.translation() = this->positionLidar_;
                 
                 pcl::transformPointCloud(*tempCloud, *globalCloud, transform);
+                sensor_msgs::PointCloud2 cloudMsg;
+                pcl::toROSMsg(*globalCloud, cloudMsg);
+
+                cloudMsg.header.frame_id = "map";
+                cloudMsg.header.stamp = ros::Time::now();
+                this->rawPointsPub_.publish(cloudMsg);
             }
             else {
                 pcl::fromROSMsg(*latest_cloud_, *globalCloud);
@@ -965,10 +973,10 @@ namespace onboardDetector{
                 }
             }
             
-            if (dynamicEigenPoints.empty()) {
-                ROS_WARN("No dynamic points found in dynamic bounding boxes.");
-                return;
-            }
+            // if (dynamicEigenPoints.empty()) {
+            //     ROS_WARN("No dynamic points found in dynamic bounding boxes.");
+            //     return;
+            // }
             
             this->publishPoints(dynamicEigenPoints, this->rawDynamicPointsPub_);
             // ROS_INFO_STREAM("Published raw dynamic point cloud with " << dynamicEigenPoints.size() << " points.");
@@ -1068,7 +1076,7 @@ namespace onboardDetector{
                 sensor_msgs::PointCloud2 outputCloud;
                 pcl::toROSMsg(*this->lidarCloud_, outputCloud); // Convert to ROS message
                 outputCloud.header.frame_id = "map";    // Set appropriate frame ID
-                this->downSamplePointsPub_.publish(outputCloud);
+                // this->downSamplePointsPub_.publish(outputCloud);
                 // ROS_INFO("Downsampled Size: %d", int(downsampledCloud->size()));
             }
         }

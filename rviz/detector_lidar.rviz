@@ -298,8 +298,8 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 1.2726378440856934
-        Min Value: 0.6094222664833069
+        Max Value: 1.1407285928726196
+        Min Value: 0.4015379846096039
         Value: true
       Axis: Z
       Channel Name: intensity
@@ -346,7 +346,7 @@ Visualization Manager:
       Size (Pixels): 3
       Size (m): 0.05000000074505806
       Style: Flat Squares
-      Topic: /pointcloud
+      Topic: /onboard_detector/raw_point_cloud
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -379,7 +379,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 27.9799747467041
+      Distance: 40.477020263671875
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -387,17 +387,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 3.3277270793914795
-        Y: -1.7245450019836426
-        Z: 1.0706909894943237
+        X: 6.124978065490723
+        Y: -0.9137181043624878
+        Z: 3.0140960216522217
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8947960138320923
+      Pitch: 0.9697959423065186
       Target Frame: <Fixed Frame>
-      Yaw: 3.290405511856079
+      Yaw: 3.6604084968566895
     Saved: ~
 Window Geometry:
   Detected Image:
