@@ -633,6 +633,8 @@ namespace onboardDetector{
 
         // downsample points visualization pub
         this->downSamplePointsPub_ = this->nh_.advertise<sensor_msgs::PointCloud2>(this->ns_ + "/downsampled_point_cloud", 10);
+
+        this->rawDynamicPointsPub_ = this->nh_.advertise<sensor_msgs::PointCloud2>(this->ns_ + "/raw_dynamic_point_cloud", 10);
     }   
 
     void dynamicDetector::registerCallback(){
@@ -693,13 +695,15 @@ namespace onboardDetector{
         
 		// get dynamic obstacle service
 		this->getDynamicObstacleServer_ = this->nh_.advertiseService("onboard_detector/get_dynamic_obstacles", &dynamicDetector::getDynamicObstacles, this);
+
         if(this->evalMode_){
         // save pointcloud to pcd
-        // this->saveTimer_ = this->nh_.createTimer(ros::Duration(1.0), &dynamicDetector::saveLidarCloudCB, this);
+        this->saveTimer_ = this->nh_.createTimer(ros::Duration(1.0), &dynamicDetector::saveLidarCloudCB, this);
 
         // save det boxes to json
         this->labelTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::labelCB, this);
         }
+        this->dynamicReprojectTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::publishRawDynamicPointsCB, this);
     }
 
     bool dynamicDetector::getDynamicObstacles(onboard_detector::GetDynamicObstacles::Request& req, 
@@ -913,6 +917,73 @@ namespace onboardDetector{
         }
     }
 
+    void dynamicDetector::publishRawDynamicPointsCB(const ros::TimerEvent& event)
+    {
+        if (!this->latest_cloud_) {
+            ROS_WARN("No point cloud received yet.");
+            return;
+        }
+        
+        try {
+            pcl::PointCloud<pcl::PointXYZ>::Ptr globalCloud(new pcl::PointCloud<pcl::PointXYZ>);
+            if (this->hasSensorPose_) {
+                pcl::PointCloud<pcl::PointXYZ>::Ptr tempCloud(new pcl::PointCloud<pcl::PointXYZ>());
+                pcl::fromROSMsg(*latest_cloud_, *tempCloud);
+                
+                Eigen::Affine3d transform = Eigen::Affine3d::Identity();
+                transform.linear() = this->orientationLidar_;
+                transform.translation() = this->positionLidar_;
+                
+                pcl::transformPointCloud(*tempCloud, *globalCloud, transform);
+            }
+            else {
+                pcl::fromROSMsg(*latest_cloud_, *globalCloud);
+            }
+            
+            std::vector<Eigen::Vector3d> dynamicEigenPoints;
+            
+            for (const auto& box : this->dynamicBBoxes_) {
+                if (!box.is_dynamic)
+                    continue;
+                
+                double x_min = box.x - box.x_width / 2.0;
+                double x_max = box.x + box.x_width / 2.0;
+                double y_min = box.y - box.y_width / 2.0;
+                double y_max = box.y + box.y_width / 2.0;
+                double z_min = box.z - box.z_width / 2.0;
+                double z_max = box.z + box.z_width / 2.0;
+                
+                for (const auto& point : globalCloud->points) {
+                    if (point.x >= x_min && point.x <= x_max &&
+                        point.y >= y_min && point.y <= y_max &&
+                        point.z >= z_min && point.z <= z_max)
+                    {
+                        dynamicEigenPoints.push_back(Eigen::Vector3d(point.x, point.y, point.z));
+                    }
+                }
+            }
+            
+            if (dynamicEigenPoints.empty()) {
+                ROS_WARN("No dynamic points found in dynamic bounding boxes.");
+                return;
+            }
+            
+            this->publishPoints(dynamicEigenPoints, this->rawDynamicPointsPub_);
+            // ROS_INFO_STREAM("Published raw dynamic point cloud with " << dynamicEigenPoints.size() << " points.");
+        }
+        catch (const pcl::PCLException& e) {
+            ROS_ERROR("PCL Exception during dynamic point extraction: %s", e.what());
+        }
+        catch (const std::exception& e) {
+            ROS_ERROR("Standard Exception during dynamic point extraction: %s", e.what());
+        }
+        catch (...) {
+            ROS_ERROR("Unknown error during dynamic point extraction.");
+        }
+    }
+
+
+
     void dynamicDetector::lidarCloudCB(const sensor_msgs::PointCloud2ConstPtr& cloudMsg){
         try {
             if (this->hasSensorPose_){
@@ -1019,7 +1090,7 @@ namespace onboardDetector{
         this->lidarDetectionTime_ = (this->lidarDetectionTime_ * this->lidarDetectCount_ + currentDetectionTime) / (this->lidarDetectCount_ + 1);
         this->lidarDetectCount_++;
 
-        ROS_INFO("Average lidar detection time: %.8f sec", this->lidarDetectionTime_);  
+        // ROS_INFO("Average lidar detection time: %.8f sec", this->lidarDetectionTime_);  
     }
 
     void dynamicDetector::detectionCB(const ros::TimerEvent&){
@@ -1033,7 +1104,7 @@ namespace onboardDetector{
         this->visualDetectionTime_ = (this->visualDetectionTime_ * this->visualDetectCount_ + currentDetectionTime) / (this->visualDetectCount_ + 1);
         this->visualDetectCount_++;
         
-        ROS_INFO("Average visual detection time: %.8f sec", this->visualDetectionTime_);
+        // ROS_INFO("Average visual detection time: %.8f sec", this->visualDetectionTime_);
 
         this->filterLVBBoxes();
         this->newDetectFlag_ = true; // get a new detection
@@ -1059,7 +1130,7 @@ namespace onboardDetector{
         this->trackingTime_ = (this->trackingTime_ * this->trackingCount_ + currentDetectionTime) / (this->trackingCount_ + 1);
         this->trackingCount_++;
         
-        ROS_INFO("Average tracking time: %.8f sec", this->trackingTime_);
+        // ROS_INFO("Average tracking time: %.8f sec", this->trackingTime_);
     }
 
     void dynamicDetector::classificationCB(const ros::TimerEvent&){
@@ -1201,7 +1272,7 @@ namespace onboardDetector{
         double classTime  = (end - start).toSec();
         this->classificationTime_ = (this->classificationTime_ * this->classificationCount_ + classTime) / (this->classificationCount_ + 1);
         this->classificationCount_++;
-        ROS_INFO("Average classification time: %.8f sec", this->classificationTime_);
+        // ROS_INFO("Average classification time: %.8f sec", this->classificationTime_);
     }
 
     void dynamicDetector::visCB(const ros::TimerEvent&){
@@ -1563,7 +1634,7 @@ namespace onboardDetector{
         double fusionTime = (end - start).toSec();
         this->fusionTime_ = (this->fusionTime_ * this->fusionCount_ + fusionTime) / (this->fusionCount_ + 1);
         this->fusionCount_++;
-        ROS_INFO("Average fusion time: %.8f sec", this->fusionTime_);
+        // ROS_INFO("Average fusion time: %.8f sec", this->fusionTime_);
 
         // STEP 5: If YOLO detection results are available, improve the classification and splitting potential incorrect bboxes
         if (this->yoloDetectionResults_.detections.size() != 0){

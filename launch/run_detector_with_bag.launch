@@ -9,8 +9,8 @@
 	<!-- <node name="rviz" pkg="rviz" type="rviz" args="-d $(find onboard_detector)/rviz/detector.rviz"/> -->
 	<node name="rviz" pkg="rviz" type="rviz" args="-d $(find onboard_detector)/rviz/detector_lidar.rviz"/>
 
-	<arg name="bag_file" default="/home/haoyus/benck_bag/drone_cage_3.bag" />
-	<!-- <arg name="bag_file" default="/home/haoyus/data/mill19_dyn_benck_4.bag" /> -->
+	<!-- <arg name="bag_file" default="/home/haoyus/benck_bag/drone_cage_3.bag" /> -->
+	<arg name="bag_file" default="/home/haoyus/data/2_18_video_bag/tech_1st_4.bag" />
   	<arg name="start_time" default="0.0" />
   	<node pkg="rosbag" type="play" name="rosbag_play" args="$(arg bag_file) --clock --start $(arg start_time) --quiet" output="screen" />
 </launch>

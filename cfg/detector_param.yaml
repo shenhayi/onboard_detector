@@ -1,5 +1,5 @@
 localization_mode: 0 # 0: pose (default) 1: odom
-data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/mill19_benck_4
+data_save_folder: /home/haoyus/data/2_18_video_bag/pcd/tech_1st_4
 eval: false
 
 # ROS Topics

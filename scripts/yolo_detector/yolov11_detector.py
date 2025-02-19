@@ -66,7 +66,7 @@ class yolo_detector:
         current_time = (endTime-startTime).to_sec()
         self.detect_time = (self.detect_time * self.detect_count + current_time) / (self.detect_count + 1)
         self.detect_count += 1
-        rospy.loginfo("yolo average detect time: %.8f", self.detect_time)
+        # rospy.loginfo("yolo average detect time: %.8f", self.detect_time)
         
         self.time_pub.publish((endTime-startTime).to_sec())
         

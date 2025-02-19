@@ -58,6 +58,7 @@ namespace onboardDetector{
         ros::Timer visTimer_;
         ros::Timer labelTimer_;
         ros::Timer saveTimer_;
+        ros::Timer dynamicReprojectTimer_;
         image_transport::Publisher uvDepthMapPub_;
         image_transport::Publisher uDepthMapPub_;
         image_transport::Publisher uvBirdViewPub_;
@@ -77,6 +78,7 @@ namespace onboardDetector{
         ros::Publisher historyTrajPub_;
         ros::Publisher velVisPub_;
         ros::Publisher downSamplePointsPub_;
+        ros::Publisher rawDynamicPointsPub_;
         ros::ServiceServer getDynamicObstacleServer_;
     
         // DETECTOR
@@ -260,6 +262,7 @@ namespace onboardDetector{
         void classificationCB(const ros::TimerEvent&);
         void visCB(const ros::TimerEvent&);
         void labelCB(const ros::TimerEvent&);
+        void publishRawDynamicPointsCB(const ros::TimerEvent& event);
 
         // detect function
         void uvDetect();
