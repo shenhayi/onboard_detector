@@ -298,8 +298,8 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 1.6014124155044556
-        Min Value: 0.35142460465431213
+        Max Value: 1.2726378440856934
+        Min Value: 0.6094222664833069
         Value: true
       Axis: Z
       Channel Name: intensity
@@ -317,8 +317,36 @@ Visualization Manager:
       Selectable: true
       Size (Pixels): 3
       Size (m): 0.10000000149011612
-      Style: Boxes
+      Style: Flat Squares
       Topic: /onboard_detector/raw_dynamic_point_cloud
+      Unreliable: false
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: Intensity
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Min Color: 0; 0; 0
+      Name: PointCloud2
+      Position Transformer: XYZ
+      Queue Size: 10
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.05000000074505806
+      Style: Flat Squares
+      Topic: /pointcloud
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -367,9 +395,9 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.8747960329055786
+      Pitch: 0.8947960138320923
       Target Frame: <Fixed Frame>
-      Yaw: 3.505408763885498
+      Yaw: 3.290405511856079
     Saved: ~
 Window Geometry:
   Detected Image:

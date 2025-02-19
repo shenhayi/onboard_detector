@@ -29,17 +29,19 @@ namespace onboardDetector{
     }
 
     void dynamicDetector::initSaveFolder(){
-        boost::filesystem::path base_dir(this->dataSaveFolder_);
-        if (!boost::filesystem::exists(base_dir))
-        {
-            if (!boost::filesystem::create_directory(base_dir))
+        if(this->evalMode_){
+            boost::filesystem::path base_dir(this->dataSaveFolder_);
+            if (!boost::filesystem::exists(base_dir))
             {
-                ROS_ERROR_STREAM("Failed to create base directory: " << base_dir.string());
-                return;
-            }
-            else
-            {
-                ROS_INFO_STREAM("Created new root directory: " << base_dir.string());
+                if (!boost::filesystem::create_directory(base_dir))
+                {
+                    ROS_ERROR_STREAM("Failed to create base directory: " << base_dir.string());
+                    return;
+                }
+                else
+                {
+                    ROS_INFO_STREAM("Created new root directory: " << base_dir.string());
+                }
             }
         }
     }
