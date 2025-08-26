@@ -31,17 +31,27 @@ namespace onboardDetector{
     void dynamicDetector::initSaveFolder(){
         if(this->evalMode_){
             boost::filesystem::path base_dir(this->dataSaveFolder_);
-            if (!boost::filesystem::exists(base_dir))
+            
+            // 避免覆盖 - 检查上级文件夹是否存在，如果存在则添加数字后缀
+            int suffix = 1;
+            boost::filesystem::path final_base_dir = base_dir;
+            
+            while (boost::filesystem::exists(final_base_dir))
             {
-                if (!boost::filesystem::create_directory(base_dir))
-                {
-                    ROS_ERROR_STREAM("Failed to create base directory: " << base_dir.string());
-                    return;
-                }
-                else
-                {
-                    ROS_INFO_STREAM("Created new root directory: " << base_dir.string());
-                }
+                final_base_dir = boost::filesystem::path(this->dataSaveFolder_ + "_" + std::to_string(suffix));
+                suffix++;
+            }
+            
+            if (!boost::filesystem::create_directory(final_base_dir))
+            {
+                ROS_ERROR_STREAM("Failed to create base directory: " << final_base_dir.string());
+                return;
+            }
+            else
+            {
+                ROS_INFO_STREAM("Created new root directory: " << final_base_dir.string());
+                // 更新dataSaveFolder_为最终的路径
+                this->dataSaveFolder_ = final_base_dir.string();
             }
         }
     }
@@ -350,6 +360,8 @@ namespace onboardDetector{
         else{
             std::cout << this->hint_ << ": Gaussian downsample rate is set to: " << this->gaussianDownSampleRate_ << std::endl;
         }
+        
+
 
         // IOU threshold
         if (not this->nh_.getParam(this->ns_ + "/filtering_BBox_IOU_threshold", this->boxIOUThresh_)){
@@ -1422,20 +1434,21 @@ namespace onboardDetector{
     void dynamicDetector::labelCB(const ros::TimerEvent& event)
     {
         std::string time_str = std::to_string(ros::Time::now().toNSec());
-        boost::filesystem::path base_dir = boost::filesystem::path(this->dataSaveFolder_);
-        boost::filesystem::path json_folder_ = base_dir / "dyn_box";
-        // boost::filesystem::path pcd_folder_ = base_dir / "lidar";
-
+        
+        // 使用已经确定的文件夹路径（在initSaveFolder中设置）
+        boost::filesystem::path json_folder_ = boost::filesystem::path(this->dataSaveFolder_) / "dyn_box";
+        
+        // 确保dyn_box子文件夹存在
         if (!boost::filesystem::exists(json_folder_))
         {
             if (!boost::filesystem::create_directory(json_folder_))
             {
-                ROS_ERROR_STREAM("Failed to create CSV folder: " << json_folder_.string());
+                ROS_ERROR_STREAM("Failed to create dyn_box folder: " << json_folder_.string());
                 return;
             }
             else
             {
-                ROS_INFO_STREAM("Created CSV folder: " << json_folder_.string());
+                ROS_INFO_STREAM("Created dyn_box folder: " << json_folder_.string());
             }
         }
 
@@ -2977,4 +2990,6 @@ namespace onboardDetector{
             }
         }
 	}
+	
+	
 }
