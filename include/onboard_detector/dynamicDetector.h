@@ -23,6 +23,7 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/crop_box.h>
+#include <pcl/kdtree/kdtree_flann.h>
 
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
@@ -133,6 +134,13 @@ namespace onboardDetector{
         double lidarDBEpsilon_;
         int gaussianDownSampleRate_;
         int downSampleThresh_;
+        
+        // Attention-based downsampling parameters
+        bool useAttentionDownsampling_;
+        double attentionSearchRadius_;
+        double attentionDistanceDecayFactor_;
+        double attentionDensityWeightMax_;
+        int attentionMinNeighborPoints_;
         
 
 
@@ -315,6 +323,11 @@ namespace onboardDetector{
         void transformBBox(const Eigen::Vector3d& center, const Eigen::Vector3d& size, const Eigen::Vector3d& position, const Eigen::Matrix3d& orientation,
                                   Eigen::Vector3d& newCenter, Eigen::Vector3d& newSize);
         int getBestOverlapBBox(const onboardDetector::box3D& currBBox, const std::vector<onboardDetector::box3D>& targetBBoxes, double& bestIOU);
+        
+        // Optimized attention-based downsampling
+        void attentionBasedDownsampling(
+            const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
+            pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud);
         
 
 

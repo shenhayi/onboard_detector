@@ -1,5 +1,5 @@
 localization_mode: 0 # 0: pose (default) 1: odom
-data_save_folder: /home/haoyus/data/attention/mill19_benck_4
+data_save_folder: /home/haoyus/data/attention/occ_test
 eval: false
 
 # ROS Topics
@@ -50,7 +50,14 @@ dbscan_search_range_epsilon: 0.05 # searching range radius
 lidar_DBSCAN_min_points: 10
 lidar_DBSCAN_epsilon: 0.05
 downsample_threshold: 3500 # threshold for downsampling
-gaussian_downsample_rate: 6
+gaussian_downsample_rate: 10
+
+# Attention-based downsampling parameters
+use_attention_downsampling: true  # Enable/disable attention-based downsampling
+attention_search_radius: 1.5       # Local density search radius (meters)
+attention_distance_decay_factor: 15.0  # Distance decay factor for attention weights
+attention_density_weight_max: 1.5      # Maximum density weight multiplier
+attention_min_neighbor_points: 3       # Minimum neighbor points for density calculation
 
 
 
@@ -69,7 +76,7 @@ kalman_filter_averaging_frames: 10
 
 # Classification
 frame_skip: 5 # num of frames skiped when comparing 2 point clouds
-dynamic_velocity_threshold: 0.2
+dynamic_velocity_threshold: 0.1
 dynamic_voting_threshold: 0.8
 frames_force_dynamic: 10 # Range of searching dynamic obstacles in box history
 frames_force_dynamic_check_range: 30 # threshold for forcing dynamic obstacles

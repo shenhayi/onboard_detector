@@ -361,6 +361,47 @@ namespace onboardDetector{
             std::cout << this->hint_ << ": Gaussian downsample rate is set to: " << this->gaussianDownSampleRate_ << std::endl;
         }
         
+        // Attention-based downsampling parameters
+        if (not this->nh_.getParam(this->ns_ + "/use_attention_downsampling", this->useAttentionDownsampling_)){
+            this->useAttentionDownsampling_ = false;
+            std::cout << this->hint_ << ": No attention downsampling parameter found. Use default: false." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Attention downsampling is set to: " << (this->useAttentionDownsampling_ ? "true" : "false") << std::endl;
+        }
+        
+        if (not this->nh_.getParam(this->ns_ + "/attention_search_radius", this->attentionSearchRadius_)){
+            this->attentionSearchRadius_ = 1.5;
+            std::cout << this->hint_ << ": No attention search radius parameter found. Use default: 1.5m." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Attention search radius is set to: " << this->attentionSearchRadius_ << "m." << std::endl;
+        }
+        
+        if (not this->nh_.getParam(this->ns_ + "/attention_distance_decay_factor", this->attentionDistanceDecayFactor_)){
+            this->attentionDistanceDecayFactor_ = 15.0;
+            std::cout << this->hint_ << ": No attention distance decay factor parameter found. Use default: 15.0." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Attention distance decay factor is set to: " << this->attentionDistanceDecayFactor_ << "." << std::endl;
+        }
+        
+        if (not this->nh_.getParam(this->ns_ + "/attention_density_weight_max", this->attentionDensityWeightMax_)){
+            this->attentionDensityWeightMax_ = 1.5;
+            std::cout << this->hint_ << ": No attention density weight max parameter found. Use default: 1.5." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Attention density weight max is set to: " << this->attentionDensityWeightMax_ << "." << std::endl;
+        }
+        
+        if (not this->nh_.getParam(this->ns_ + "/attention_min_neighbor_points", this->attentionMinNeighborPoints_)){
+            this->attentionMinNeighborPoints_ = 3;
+            std::cout << this->hint_ << ": No attention min neighbor points parameter found. Use default: 3." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Attention min neighbor points is set to: " << this->attentionMinNeighborPoints_ << "." << std::endl;
+        }
+        
 
 
         // IOU threshold
@@ -1179,25 +1220,37 @@ namespace onboardDetector{
 
             ROS_INFO("Initial Downsampled Size: %zu", groundRoofFilterCloud->size());
     
-            // 6. Final downsampling with PREDICTIVE VoxelGrid leaf size
+            // 6. Final downsampling with adaptive strategy
             pcl::PointCloud<pcl::PointXYZ>::Ptr downsampledCloud(new pcl::PointCloud<pcl::PointXYZ>());
-            pcl::VoxelGrid<pcl::PointXYZ> sor;
-            sor.setInputCloud(groundRoofFilterCloud);
-    
-            size_t current_points = groundRoofFilterCloud->size();
-            size_t target_points = this->downSampleThresh_;
-    
-            if (current_points > target_points) {
-                // Predict the required leaf size to get close to the target point count
-                float base_leaf_size = 0.1f; // A sensible default
-                double scale_factor = cbrt(static_cast<double>(current_points) / target_points);
-                float new_leaf_size = static_cast<float>(base_leaf_size * scale_factor);
-                sor.setLeafSize(new_leaf_size, new_leaf_size, new_leaf_size);
-            } else {
-                sor.setLeafSize(0.1f, 0.1f, 0.1f); // Use default if already sparse
-            }
             
-            sor.filter(*downsampledCloud); // Execute filter only ONCE
+            if (this->useAttentionDownsampling_) {
+                // 使用优化的注意力下采样
+                attentionBasedDownsampling(groundRoofFilterCloud, downsampledCloud);
+            } else {
+                // 保持原有的预测性VoxelGrid下采样
+                pcl::VoxelGrid<pcl::PointXYZ> sor;
+                sor.setInputCloud(groundRoofFilterCloud);
+                
+                size_t current_points = groundRoofFilterCloud->size();
+                size_t target_points = this->downSampleThresh_;
+                
+                if (current_points > target_points) {
+                    // Predict the required leaf size to get close to the target point count
+                    float base_leaf_size = 0.1f; // A sensible default
+                    double scale_factor = cbrt(static_cast<double>(current_points) / target_points);
+                    float new_leaf_size = static_cast<float>(base_leaf_size * scale_factor);
+                    
+                    // 添加自适应限制
+                    new_leaf_size = std::min(new_leaf_size, 0.8f);  // 最大leaf size
+                    new_leaf_size = std::max(new_leaf_size, 0.03f); // 最小leaf size
+                    
+                    sor.setLeafSize(new_leaf_size, new_leaf_size, new_leaf_size);
+                } else {
+                    sor.setLeafSize(0.1f, 0.1f, 0.1f); // Use default if already sparse
+                }
+                
+                sor.filter(*downsampledCloud); // Execute filter only ONCE
+            }
     
             this->lidarCloud_ = downsampledCloud;
             ROS_INFO("Downsampled Size: %zu", downsampledCloud->size()); // Use %zu for size_t
@@ -2991,5 +3044,84 @@ namespace onboardDetector{
         }
 	}
 	
-	
+	// Optimized attention-based downsampling implementation
+	void dynamicDetector::attentionBasedDownsampling(
+		const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
+		pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud) {
+		
+		if (input_cloud->empty()) {
+			output_cloud = input_cloud;
+			return;
+		}
+		
+		// 如果输入点数已经小于等于目标点数，直接复制
+		if (input_cloud->size() <= static_cast<size_t>(this->downSampleThresh_)) {
+			*output_cloud = *input_cloud;
+			ROS_INFO("Attention downsampling: %zu -> %zu points (no reduction needed)", 
+					 input_cloud->size(), output_cloud->size());
+			return;
+		}
+		
+		// 快速预检查：如果点数太多，先用VoxelGrid快速下采样
+		if (input_cloud->size() > static_cast<size_t>(this->downSampleThresh_ * 3)) {
+			ROS_INFO("Point cloud large (%zu points), using fast VoxelGrid pre-filtering", input_cloud->size());
+			
+			pcl::VoxelGrid<pcl::PointXYZ> pre_filter;
+			pre_filter.setInputCloud(input_cloud);
+			
+			// 计算合适的leaf size，目标是将点数降到目标点数的2-3倍
+			double scale_factor = cbrt(static_cast<double>(input_cloud->size()) / (this->downSampleThresh_ * 2.5));
+			float leaf_size = static_cast<float>(0.1 * scale_factor);
+			leaf_size = std::min(leaf_size, 0.5f);  // 限制最大leaf size
+			leaf_size = std::max(leaf_size, 0.05f); // 限制最小leaf size
+			
+			pre_filter.setLeafSize(leaf_size, leaf_size, leaf_size);
+			
+			pcl::PointCloud<pcl::PointXYZ>::Ptr pre_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>());
+			pre_filter.filter(*pre_filtered_cloud);
+			
+			// 如果预过滤后仍然太多，递归调用
+			if (pre_filtered_cloud->size() > this->downSampleThresh_ * 1.5) {
+				attentionBasedDownsampling(pre_filtered_cloud, output_cloud);
+				return;
+			}
+			
+			// 否则直接使用预过滤结果
+			*output_cloud = *pre_filtered_cloud;
+			ROS_INFO("Fast pre-filtering: %zu -> %zu points", 
+					 input_cloud->size(), output_cloud->size());
+			return;
+		}
+		
+		// 对于中等大小的点云，使用简化的attention采样
+		// 只计算距离权重，不计算局部密度（减少计算量）
+		output_cloud->clear();
+		output_cloud->reserve(this->downSampleThresh_);
+		
+		// 计算每个点的距离权重
+		std::vector<std::pair<double, size_t>> distance_scores; // <weight, index>
+		distance_scores.reserve(input_cloud->size());
+		
+		for (size_t i = 0; i < input_cloud->size(); ++i) {
+			const auto& pt = input_cloud->points[i];
+			double distance = sqrt(pt.x * pt.x + pt.y * pt.y);
+			
+			// 只使用距离权重，避免复杂的邻域搜索
+			double distance_weight = std::exp(-distance / this->attentionDistanceDecayFactor_);
+			distance_scores.emplace_back(distance_weight, i);
+		}
+		
+		// 按距离权重排序（降序）
+		std::sort(distance_scores.begin(), distance_scores.end(), 
+				  [](const auto& a, const auto& b) { return a.first > b.first; });
+		
+		// 选择权重最高的点，直到达到目标点数
+		for (size_t i = 0; i < static_cast<size_t>(this->downSampleThresh_) && i < distance_scores.size(); ++i) {
+			size_t idx = distance_scores[i].second;
+			output_cloud->push_back(input_cloud->points[idx]);
+		}
+		
+		ROS_INFO("Attention downsampling: %zu -> %zu points (distance-based selection)", 
+				 input_cloud->size(), output_cloud->size());
+	}
 }
