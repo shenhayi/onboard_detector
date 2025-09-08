@@ -1,5 +1,5 @@
 localization_mode: 0 # 0: pose (default) 1: odom
-data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/cage_occ_4_voxel_rate10000
+data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/cage_occ_4_v_r10
 eval: true
 
 # Data saving control parameters
@@ -54,7 +54,7 @@ dbscan_search_range_epsilon: 0.05 # searching range radius
 lidar_DBSCAN_min_points: 10
 lidar_DBSCAN_epsilon: 0.05
 downsample_threshold: 3500 # threshold for downsampling
-gaussian_downsample_rate: 10000
+gaussian_downsample_rate: 10
 
 # Attention-based downsampling parameters
 use_attention_downsampling: false # Enable/disable attention-based downsampling

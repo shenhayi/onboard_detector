@@ -1246,10 +1246,10 @@ namespace onboardDetector{
             pcl::PointCloud<pcl::PointXYZ>::Ptr downsampledCloud(new pcl::PointCloud<pcl::PointXYZ>());
             
             if (this->useAttentionDownsampling_) {
-                // 使用优化的注意力下采样
+                // Use optimized attention-based downsampling
                 attentionBasedDownsampling(groundRoofFilterCloud, downsampledCloud);
             } else {
-                // 保持原有的预测性VoxelGrid下采样
+                // Keep original predictive VoxelGrid downsampling
                 pcl::VoxelGrid<pcl::PointXYZ> sor;
                 sor.setInputCloud(groundRoofFilterCloud);
                 
@@ -1262,9 +1262,9 @@ namespace onboardDetector{
                     double scale_factor = cbrt(static_cast<double>(current_points) / target_points);
                     float new_leaf_size = static_cast<float>(base_leaf_size * scale_factor);
                     
-                    // 添加自适应限制
-                    new_leaf_size = std::min(new_leaf_size, 0.8f);  // 最大leaf size
-                    new_leaf_size = std::max(new_leaf_size, 0.03f); // 最小leaf size
+                    // Add adaptive constraints
+                    new_leaf_size = std::min(new_leaf_size, 0.8f);  // Maximum leaf size
+                    new_leaf_size = std::max(new_leaf_size, 0.03f); // Minimum leaf size
                     
                     sor.setLeafSize(new_leaf_size, new_leaf_size, new_leaf_size);
                 } else {
@@ -1515,10 +1515,10 @@ namespace onboardDetector{
         
         std::string time_str = std::to_string(ros::Time::now().toNSec());
         
-        // 使用已经确定的文件夹路径（在initSaveFolder中设置）
+        // Use the already determined folder path (set in initSaveFolder)
         boost::filesystem::path json_folder_ = boost::filesystem::path(this->dataSaveFolder_) / "dyn_box";
         
-        // 确保dyn_box子文件夹存在
+        // Ensure dyn_box subfolder exists
         if (!boost::filesystem::exists(json_folder_))
         {
             if (!boost::filesystem::create_directory(json_folder_))
@@ -3081,7 +3081,7 @@ namespace onboardDetector{
 			return;
 		}
 		
-		// 如果输入点数已经小于等于目标点数，直接复制
+		// If input points are already less than or equal to target points, copy directly
 		if (input_cloud->size() <= static_cast<size_t>(this->downSampleThresh_)) {
 			*output_cloud = *input_cloud;
 			ROS_INFO("Attention downsampling: %zu -> %zu points (no reduction needed)", 
@@ -3089,43 +3089,43 @@ namespace onboardDetector{
 			return;
 		}
 		
-		// 快速预检查：如果点数太多，先用VoxelGrid快速下采样
+		// Fast pre-check: if too many points, use VoxelGrid for fast downsampling first
 		if (input_cloud->size() > static_cast<size_t>(this->downSampleThresh_ * 3)) {
 			ROS_INFO("Point cloud large (%zu points), using fast VoxelGrid pre-filtering", input_cloud->size());
 			
 			pcl::VoxelGrid<pcl::PointXYZ> pre_filter;
 			pre_filter.setInputCloud(input_cloud);
 			
-			// 计算合适的leaf size，目标是将点数降到目标点数的2-3倍
+			// Calculate appropriate leaf size, target is to reduce points to 2-3 times the target count
 			double scale_factor = cbrt(static_cast<double>(input_cloud->size()) / (this->downSampleThresh_ * 2.5));
 			float leaf_size = static_cast<float>(0.1 * scale_factor);
-			leaf_size = std::min(leaf_size, 0.5f);  // 限制最大leaf size
-			leaf_size = std::max(leaf_size, 0.05f); // 限制最小leaf size
+			leaf_size = std::min(leaf_size, 0.5f);  // Limit maximum leaf size
+			leaf_size = std::max(leaf_size, 0.05f); // Limit minimum leaf size
 			
 			pre_filter.setLeafSize(leaf_size, leaf_size, leaf_size);
 			
 			pcl::PointCloud<pcl::PointXYZ>::Ptr pre_filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>());
 			pre_filter.filter(*pre_filtered_cloud);
 			
-			// 如果预过滤后仍然太多，递归调用
+			// If still too many after pre-filtering, recursively call
 			if (pre_filtered_cloud->size() > this->downSampleThresh_ * 1.5) {
 				attentionBasedDownsampling(pre_filtered_cloud, output_cloud);
 				return;
 			}
 			
-			// 否则直接使用预过滤结果
+			// Otherwise use pre-filtered result directly
 			*output_cloud = *pre_filtered_cloud;
 			ROS_INFO("Fast pre-filtering: %zu -> %zu points", 
 					 input_cloud->size(), output_cloud->size());
 			return;
 		}
 		
-		// 对于中等大小的点云，使用简化的attention采样
-		// 只计算距离权重，不计算局部密度（减少计算量）
+		// For medium-sized point clouds, use simplified attention sampling
+		// Only calculate distance weights, not local density (reduce computation)
 		output_cloud->clear();
 		output_cloud->reserve(this->downSampleThresh_);
 		
-		// 计算每个点的距离权重
+		// Calculate distance weight for each point
 		std::vector<std::pair<double, size_t>> distance_scores; // <weight, index>
 		distance_scores.reserve(input_cloud->size());
 		
@@ -3133,16 +3133,16 @@ namespace onboardDetector{
 			const auto& pt = input_cloud->points[i];
 			double distance = sqrt(pt.x * pt.x + pt.y * pt.y);
 			
-			// 只使用距离权重，避免复杂的邻域搜索
+			// Only use distance weights, avoid complex neighborhood search
 			double distance_weight = std::exp(-distance / this->attentionDistanceDecayFactor_);
 			distance_scores.emplace_back(distance_weight, i);
 		}
 		
-		// 按距离权重排序（降序）
+		// Sort by distance weight (descending order)
 		std::sort(distance_scores.begin(), distance_scores.end(), 
 				  [](const auto& a, const auto& b) { return a.first > b.first; });
 		
-		// 选择权重最高的点，直到达到目标点数
+		// Select points with highest weights until reaching target count
 		for (size_t i = 0; i < static_cast<size_t>(this->downSampleThresh_) && i < distance_scores.size(); ++i) {
 			size_t idx = distance_scores[i].second;
 			output_cloud->push_back(input_cloud->points[idx]);
