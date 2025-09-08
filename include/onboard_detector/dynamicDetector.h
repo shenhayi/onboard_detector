@@ -119,6 +119,10 @@ namespace onboardDetector{
         // System
         double dt_;
         std::string dataSaveFolder_;
+        
+        // Data saving control parameters
+        bool savePointcloud_;
+        bool saveDetectionBoxes_;
 
         // DBSCAN Common
         double groundHeight_;

@@ -32,7 +32,7 @@ namespace onboardDetector{
         if(this->evalMode_){
             boost::filesystem::path base_dir(this->dataSaveFolder_);
             
-            // 避免覆盖 - 检查上级文件夹是否存在，如果存在则添加数字后缀
+            // avoid overwrite - check if the parent folder exists, if exists, add a number suffix
             int suffix = 1;
             boost::filesystem::path final_base_dir = base_dir;
             
@@ -50,7 +50,7 @@ namespace onboardDetector{
             else
             {
                 ROS_INFO_STREAM("Created new root directory: " << final_base_dir.string());
-                // 更新dataSaveFolder_为最终的路径
+                // update dataSaveFolder_ to the final path
                 this->dataSaveFolder_ = final_base_dir.string();
             }
         }
@@ -628,6 +628,23 @@ namespace onboardDetector{
         else{
             std::cout << this->hint_ << ": Eval mode is set to: " << this->evalMode_ << std::endl;
         }
+        
+        // Data saving control parameters
+        if (not this->nh_.getParam(this->ns_ + "/save_pointcloud", this->savePointcloud_)){
+            this->savePointcloud_ = true;
+            std::cout << this->hint_ << ": No save_pointcloud parameter found. Use default: true." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Save pointcloud is set to: " << this->savePointcloud_ << std::endl;
+        }
+        
+        if (not this->nh_.getParam(this->ns_ + "/save_detection_boxes", this->saveDetectionBoxes_)){
+            this->saveDetectionBoxes_ = true;
+            std::cout << this->hint_ << ": No save_detection_boxes parameter found. Use default: true." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Save detection boxes is set to: " << this->saveDetectionBoxes_ << std::endl;
+        }
     }
 
     void dynamicDetector::registerPub(){
@@ -911,6 +928,11 @@ namespace onboardDetector{
     }
 
     void dynamicDetector::saveLidarCloudCB(const ros::TimerEvent& event){
+        // Check if point cloud saving is enabled
+        if (!this->savePointcloud_) {
+            return;
+        }
+        
         if (!this->latest_cloud_) {
             ROS_WARN("No point cloud received yet.");
             return;
@@ -1486,6 +1508,11 @@ namespace onboardDetector{
 
     void dynamicDetector::labelCB(const ros::TimerEvent& event)
     {
+        // Check if detection box saving is enabled
+        if (!this->saveDetectionBoxes_) {
+            return;
+        }
+        
         std::string time_str = std::to_string(ros::Time::now().toNSec());
         
         // 使用已经确定的文件夹路径（在initSaveFolder中设置）

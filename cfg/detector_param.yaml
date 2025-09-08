@@ -1,6 +1,10 @@
 localization_mode: 0 # 0: pose (default) 1: odom
-data_save_folder: /home/haoyus/data/attention/occ_test
-eval: false
+data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/cage_occ_4_voxel_rate10000
+eval: true
+
+# Data saving control parameters
+save_pointcloud: false   # Enable/disable point cloud saving
+save_detection_boxes: true  # Enable/disable detection box saving
 
 # ROS Topics
 depth_image_topic: /camera/depth/image_rect_raw
@@ -50,10 +54,10 @@ dbscan_search_range_epsilon: 0.05 # searching range radius
 lidar_DBSCAN_min_points: 10
 lidar_DBSCAN_epsilon: 0.05
 downsample_threshold: 3500 # threshold for downsampling
-gaussian_downsample_rate: 10
+gaussian_downsample_rate: 10000
 
 # Attention-based downsampling parameters
-use_attention_downsampling: true  # Enable/disable attention-based downsampling
+use_attention_downsampling: false # Enable/disable attention-based downsampling
 attention_search_radius: 1.5       # Local density search radius (meters)
 attention_distance_decay_factor: 15.0  # Distance decay factor for attention weights
 attention_density_weight_max: 1.5      # Maximum density weight multiplier
