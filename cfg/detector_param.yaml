@@ -59,8 +59,8 @@ gaussian_downsample_rate: 10
 
 # Attention-based downsampling parameters
 use_attention_downsampling: true # Enable/disable attention-based downsampling
-attention_search_radius: 1.5      # Local density search radius (meters) 
-attention_distance_decay_factor: 15.0  # Distance decay factor for attention weights
+attention_search_radius: 1.0       # Local density search radius (meters) - reduced for 10m range
+attention_distance_decay_factor: 8.0  # Distance decay factor for attention weights - stronger near-field bias
 attention_density_weight_max: 1.5      # Maximum density weight multiplier
 attention_min_neighbor_points: 3       # Minimum neighbor points for density calculation
 
@@ -79,7 +79,7 @@ kalman_filter_averaging_frames: 10
 
 # Classification
 frame_skip: 5 # num of frames skiped when comparing 2 point clouds
-dynamic_velocity_threshold: 0.2
+dynamic_velocity_threshold: 0.1
 dynamic_voting_threshold: 0.8
 frames_force_dynamic: 10 # Range of searching dynamic obstacles in box history
 frames_force_dynamic_check_range: 30 # threshold for forcing dynamic obstacles
