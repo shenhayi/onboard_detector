@@ -934,7 +934,7 @@ namespace onboardDetector{
         }
         
         if (!this->latest_cloud_) {
-            // ROS_WARN("No point cloud received yet.");
+            ROS_WARN("No point cloud received yet.");
             return;
         }
         try {
@@ -999,7 +999,7 @@ namespace onboardDetector{
     void dynamicDetector::publishRawDynamicPointsCB(const ros::TimerEvent& event)
     {
         if (!this->latest_cloud_) {
-            // ROS_WARN("No point cloud received yet.");
+            ROS_WARN("No point cloud received yet.");
             return;
         }
         
