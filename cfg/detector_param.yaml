@@ -1,10 +1,10 @@
 localization_mode: 0 # 0: pose (default) 1: odom
 data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/cage_occ_4_v_r10
-eval: true
+eval: false
 
 # Data saving control parameters
 save_pointcloud: false   # Enable/disable point cloud saving
-save_detection_boxes: true  # Enable/disable detection box saving
+save_detection_boxes: false  # Enable/disable detection box saving
 
 # ROS Topics
 depth_image_topic: /camera/depth/image_rect_raw
@@ -60,8 +60,8 @@ gaussian_downsample_rate: 10
 
 # Attention-based downsampling parameters
 use_attention_downsampling: false # Enable/disable attention-based downsampling
-attention_search_radius: 1.0       # Local density search radius (meters) - reduced for 10m range
-attention_distance_decay_factor: 8.0  # Distance decay factor for attention weights - stronger near-field bias
+attention_search_radius: 1.5       # Local density search radius (meters) - reduced for 10m range
+attention_distance_decay_factor: 15.0  # Distance decay factor for attention weights - stronger near-field bias
 attention_density_weight_max: 1.5      # Maximum density weight multiplier
 attention_min_neighbor_points: 3       # Minimum neighbor points for density calculation
 
