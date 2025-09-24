@@ -1,10 +1,10 @@
 localization_mode: 0 # 0: pose (default) 1: odom
 data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/cage_occ_4_v_r10
-eval: false
+eval: true
 
 # Data saving control parameters
 save_pointcloud: false   # Enable/disable point cloud saving
-save_detection_boxes: false  # Enable/disable detection box saving
+save_detection_boxes: true  # Enable/disable detection box saving
 
 # ROS Topics
 depth_image_topic: /camera/depth/image_rect_raw
@@ -65,6 +65,8 @@ attention_distance_decay_factor: 8.0  # Distance decay factor for attention weig
 attention_density_weight_max: 1.5      # Maximum density weight multiplier
 attention_min_neighbor_points: 3       # Minimum neighbor points for density calculation
 
+
+
 # LiDAR Visual Filtering
 filtering_BBox_IOU_threshold: 0.2
 
@@ -87,6 +89,6 @@ frames_force_dynamic_check_range: 30 # threshold for forcing dynamic obstacles
 dynamic_consistency_threshold: 15 # obstacles being voted as dynamic for continuous k frames are eligible to be classified as dynamic
 
 # Constrain size
-target_constrain_size: false
+target_constrain_size: true
 target_object_size: [0.5, 0.5, 1.5]
 max_object_size: [3.0, 3.0, 2.0] # filter out objects that are too large
