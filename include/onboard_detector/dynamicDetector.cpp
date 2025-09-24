@@ -370,6 +370,15 @@ namespace onboardDetector{
             std::cout << this->hint_ << ": Gaussian downsample rate is set to: " << this->gaussianDownSampleRate_ << std::endl;
         }
         
+        // Enable/disable VoxelGrid refinement iterations
+        if (not this->nh_.getParam(this->ns_ + "/enable_downsample_refine", this->enableDownsampleRefine_)){
+            this->enableDownsampleRefine_ = true;
+            std::cout << this->hint_ << ": No downsample refine parameter found. Use default: true." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Downsample refine is set to: " << (this->enableDownsampleRefine_ ? "true" : "false") << std::endl;
+        }
+        
         // Attention-based downsampling parameters
         if (not this->nh_.getParam(this->ns_ + "/use_attention_downsampling", this->useAttentionDownsampling_)){
             this->useAttentionDownsampling_ = false;
@@ -1281,27 +1290,35 @@ namespace onboardDetector{
                     sor.setLeafSize(new_leaf_size, new_leaf_size, new_leaf_size);
                     sor.filter(*downsampledCloud);
                     
-                    // Post-check: if still too many points, do a few iterations to reduce
-                    size_t result_points = downsampledCloud->size();
-                    if (result_points > target_points * 1.1) { // 10% tolerance
-                        const int max_refine_iterations = 2; // Only 2 iterations for refinement
-                        float refine_leaf_size = new_leaf_size;
-                        
-                        for (int iter = 0; iter < max_refine_iterations; ++iter) {
-                            // Increase leaf size to reduce points
-                            double excess_ratio = static_cast<double>(result_points) / target_points;
-                            refine_leaf_size *= std::pow(excess_ratio, 1.0/3.0);
+                    // Post-check: adjust leaf size if points are too many or too few (if refine is enabled)
+                    if (this->enableDownsampleRefine_) {
+                        size_t result_points = downsampledCloud->size();
+                        if (result_points > target_points * 1.1 || result_points < target_points * 0.9) { // 10% tolerance
+                            const int max_refine_iterations = 2; // Only 2 iterations for refinement
+                            float refine_leaf_size = new_leaf_size;
                             
-                            // Apply constraints
-                            refine_leaf_size = std::min(refine_leaf_size, 0.8f);
-                            refine_leaf_size = std::max(refine_leaf_size, 0.03f);
-                            
-                            sor.setLeafSize(refine_leaf_size, refine_leaf_size, refine_leaf_size);
-                            sor.filter(*downsampledCloud);
-                            
-                            result_points = downsampledCloud->size();
-                            if (result_points <= target_points * 1.1) {
-                                break; // Within 10% tolerance, stop
+                            for (int iter = 0; iter < max_refine_iterations; ++iter) {
+                                if (result_points > target_points) {
+                                    // Too many points, increase leaf size to reduce
+                                    double excess_ratio = static_cast<double>(result_points) / target_points;
+                                    refine_leaf_size *= std::pow(excess_ratio, 1.0/3.0);
+                                } else {
+                                    // Too few points, decrease leaf size to increase
+                                    double deficit_ratio = static_cast<double>(target_points) / result_points;
+                                    refine_leaf_size /= std::pow(deficit_ratio, 1.0/3.0);
+                                }
+                                
+                                // Apply constraints
+                                refine_leaf_size = std::min(refine_leaf_size, 0.8f);
+                                refine_leaf_size = std::max(refine_leaf_size, 0.03f);
+                                
+                                sor.setLeafSize(refine_leaf_size, refine_leaf_size, refine_leaf_size);
+                                sor.filter(*downsampledCloud);
+                                
+                                result_points = downsampledCloud->size();
+                                if (result_points >= target_points * 0.9 && result_points <= target_points * 1.1) {
+                                    break; // Within 10% tolerance, stop
+                                }
                             }
                         }
                     }

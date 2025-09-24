@@ -57,6 +57,7 @@ lidar_DBSCAN_epsilon: 0.05
 downsample_threshold: 3500 # threshold for downsampling
 use_gaussian_downsampling: true # Enable/disable Gaussian probability downsampling
 gaussian_downsample_rate: 10
+enable_downsample_refine: true # Enable/disable VoxelGrid refinement iterations
 
 # Attention-based downsampling parameters
 use_attention_downsampling: false # Enable/disable attention-based downsampling

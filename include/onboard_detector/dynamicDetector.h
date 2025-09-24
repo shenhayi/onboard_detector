@@ -139,6 +139,7 @@ namespace onboardDetector{
         bool useGaussianDownsampling_;
         int gaussianDownSampleRate_;
         int downSampleThresh_;
+        bool enableDownsampleRefine_;
         
         // Attention-based downsampling parameters
         bool useAttentionDownsampling_;
