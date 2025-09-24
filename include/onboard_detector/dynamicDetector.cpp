@@ -352,6 +352,15 @@ namespace onboardDetector{
             cout << this->hint_ << ": Downsample threshold is set to: " << this->downSampleThresh_ << endl;
         }
 
+        // gaussian downsample enable/disable
+        if (not this->nh_.getParam(this->ns_ + "/use_gaussian_downsampling", this->useGaussianDownsampling_)){
+            this->useGaussianDownsampling_ = true;
+            std::cout << this->hint_ << ": No gaussian downsampling parameter found. Use default: true." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Gaussian downsampling is set to: " << (this->useGaussianDownsampling_ ? "true" : "false") << std::endl;
+        }
+        
         // gaussian downsample rate
         if (not this->nh_.getParam(this->ns_ + "/gaussian_downsample_rate", this->gaussianDownSampleRate_)){
             this->gaussianDownSampleRate_ = 2;
@@ -1196,26 +1205,29 @@ namespace onboardDetector{
             boxFilter.setInputCloud(tempCloud);
             boxFilter.filter(*filteredCloud);
     
-            // 3. Optimized Gaussian probability downsampling
+            // 3. Conditional Gaussian probability downsampling
             pcl::PointCloud<pcl::PointXYZ>::Ptr preTransformCloud(new pcl::PointCloud<pcl::PointXYZ>());
-            preTransformCloud->reserve(filteredCloud->size()); // Good practice!
             
-            int sigma = this->gaussianDownSampleRate_;
-            double sigma_sq_2 = 2.0 * sigma * sigma;
-    
-            // For better random numbers (can be a class member for performance)
-            // std::mt19937 gen{std::random_device{}()};
-            // std::uniform_real_distribution<double> dist(0.0, 1.0);
-    
-            for (const auto& pt : filteredCloud->points) {
-                double dist_sq = pt.x * pt.x + pt.y * pt.y;
-                double p = std::exp(-dist_sq / sigma_sq_2);
+            if (this->useGaussianDownsampling_) {
+                // Apply Gaussian probability downsampling
+                preTransformCloud->reserve(filteredCloud->size()); // Good practice!
                 
-                // Using standard rand() for simplicity here, but <random> is preferred
-                double r = static_cast<double>(rand()) / static_cast<double>(RAND_MAX);
-                if (r < p) {
-                    preTransformCloud->push_back(pt);
+                int sigma = this->gaussianDownSampleRate_;
+                double sigma_sq_2 = 2.0 * sigma * sigma;
+        
+                for (const auto& pt : filteredCloud->points) {
+                    double dist_sq = pt.x * pt.x + pt.y * pt.y;
+                    double p = std::exp(-dist_sq / sigma_sq_2);
+                    
+                    // Using standard rand() for simplicity here, but <random> is preferred
+                    double r = static_cast<double>(rand()) / static_cast<double>(RAND_MAX);
+                    if (r < p) {
+                        preTransformCloud->push_back(pt);
+                    }
                 }
+            } else {
+                // Skip Gaussian downsampling, use all filtered points
+                *preTransformCloud = *filteredCloud;
             }
             
             // 4. Transform point cloud to map frame
@@ -1257,8 +1269,8 @@ namespace onboardDetector{
                 size_t target_points = this->downSampleThresh_;
                 
                 if (current_points > target_points) {
-                    // Predict the required leaf size to get close to the target point count
-                    float base_leaf_size = 0.1f; // A sensible default
+                    // Simple one-shot predictive VoxelGrid downsampling
+                    float base_leaf_size = 0.05f; // A sensible default
                     double scale_factor = cbrt(static_cast<double>(current_points) / target_points);
                     float new_leaf_size = static_cast<float>(base_leaf_size * scale_factor);
                     
@@ -1267,11 +1279,36 @@ namespace onboardDetector{
                     new_leaf_size = std::max(new_leaf_size, 0.03f); // Minimum leaf size
                     
                     sor.setLeafSize(new_leaf_size, new_leaf_size, new_leaf_size);
+                    sor.filter(*downsampledCloud);
+                    
+                    // Post-check: if still too many points, do a few iterations to reduce
+                    size_t result_points = downsampledCloud->size();
+                    if (result_points > target_points * 1.1) { // 10% tolerance
+                        const int max_refine_iterations = 2; // Only 2 iterations for refinement
+                        float refine_leaf_size = new_leaf_size;
+                        
+                        for (int iter = 0; iter < max_refine_iterations; ++iter) {
+                            // Increase leaf size to reduce points
+                            double excess_ratio = static_cast<double>(result_points) / target_points;
+                            refine_leaf_size *= std::pow(excess_ratio, 1.0/3.0);
+                            
+                            // Apply constraints
+                            refine_leaf_size = std::min(refine_leaf_size, 0.8f);
+                            refine_leaf_size = std::max(refine_leaf_size, 0.03f);
+                            
+                            sor.setLeafSize(refine_leaf_size, refine_leaf_size, refine_leaf_size);
+                            sor.filter(*downsampledCloud);
+                            
+                            result_points = downsampledCloud->size();
+                            if (result_points <= target_points * 1.1) {
+                                break; // Within 10% tolerance, stop
+                            }
+                        }
+                    }
                 } else {
                     sor.setLeafSize(0.1f, 0.1f, 0.1f); // Use default if already sparse
+                    sor.filter(*downsampledCloud);
                 }
-                
-                sor.filter(*downsampledCloud); // Execute filter only ONCE
             }
     
             this->lidarCloud_ = downsampledCloud;
@@ -3096,11 +3133,23 @@ namespace onboardDetector{
 			pcl::VoxelGrid<pcl::PointXYZ> pre_filter;
 			pre_filter.setInputCloud(input_cloud);
 			
-			// Calculate appropriate leaf size, target is to reduce points to 2-3 times the target count
-			double scale_factor = cbrt(static_cast<double>(input_cloud->size()) / (this->downSampleThresh_ * 2.5));
-			float leaf_size = static_cast<float>(0.1 * scale_factor);
-			leaf_size = std::min(leaf_size, 0.5f);  // Limit maximum leaf size
-			leaf_size = std::max(leaf_size, 0.05f); // Limit minimum leaf size
+			// Calculate appropriate leaf size with smaller steps for finer control
+			double reduction_ratio = static_cast<double>(this->downSampleThresh_ * 2.5) / input_cloud->size();
+			double scale_factor = std::pow(reduction_ratio, 1.0/3.0); // Cube root for volume scaling
+			float leaf_size = static_cast<float>(0.05 * scale_factor); // Smaller base size
+			
+			// Apply smaller step increments for finer control
+			float step_size = 0.01f; // Smaller step size
+			float min_leaf_size = 0.02f; // Smaller minimum
+			float max_leaf_size = 0.3f;  // Smaller maximum for better quality
+			
+			// Clamp to reasonable bounds with smaller steps
+			leaf_size = std::min(leaf_size, max_leaf_size);
+			leaf_size = std::max(leaf_size, min_leaf_size);
+			
+			// Round to nearest step for more predictable behavior
+			leaf_size = std::round(leaf_size / step_size) * step_size;
+			leaf_size = std::max(leaf_size, min_leaf_size); // Ensure minimum
 			
 			pre_filter.setLeafSize(leaf_size, leaf_size, leaf_size);
 			

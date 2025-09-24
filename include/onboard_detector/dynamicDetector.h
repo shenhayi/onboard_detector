@@ -136,6 +136,7 @@ namespace onboardDetector{
         // DBSCAN LiDAR param
         int lidarDBMinPoints_;
         double lidarDBEpsilon_;
+        bool useGaussianDownsampling_;
         int gaussianDownSampleRate_;
         int downSampleThresh_;
         
