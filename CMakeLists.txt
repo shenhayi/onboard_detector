@@ -3,7 +3,7 @@ project(onboard_detector)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
-set(CMAKE_CXX_FLAGS "-std=c++14 ${CMAKE_CXX_FLAGS} -O3 -Wall")
+set(CMAKE_CXX_FLAGS "-std=c++14 ${CMAKE_CXX_FLAGS} -O3 -Wall -fopenmp")
 
 
 ## Find catkin macros and libraries
@@ -18,11 +18,16 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   vision_msgs
   message_generation
+  sensor_msgs
+  geometry_msgs
 )
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 find_package(PCL 1.7 REQUIRED)
+find_package(Open3D REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(OpenMP REQUIRED)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -126,6 +131,7 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
+  ${Open3D_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -165,7 +171,7 @@ add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EX
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
-target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES} ${PCL_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${Open3D_LIBRARIES} OpenMP::OpenMP_CXX)
 target_link_libraries(detector_node ${PROJECT_NAME})
 target_link_libraries(fake_detector_node ${PROJECT_NAME})
 

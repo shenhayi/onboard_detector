@@ -420,8 +420,26 @@ namespace onboardDetector{
             std::cout << this->hint_ << ": Attention min neighbor points is set to: " << this->attentionMinNeighborPoints_ << "." << std::endl;
         }
         
-
-
+        // Refine mode parameters
+        if (not this->nh_.getParam(this->ns_ + "/refine_mode", this->refineMode_)){
+            this->refineMode_ = 2; // Default to hybrid mode
+            std::cout << this->hint_ << ": No refine mode parameter found. Use default: 2 (hybrid)." << std::endl;
+        }
+        else{
+            std::string mode_name;
+            switch(this->refineMode_) {
+                case 0: mode_name = "pure_voxelgrid"; break;
+                case 1: mode_name = "fps"; break;
+                case 2: mode_name = "hybrid"; break;
+                default: 
+                    this->refineMode_ = 2; // Invalid value, use default
+                    mode_name = "hybrid (default)";
+                    break;
+            }
+            std::cout << this->hint_ << ": Refine mode is set to: " << this->refineMode_ << " (" << mode_name << ")" << std::endl;
+        }
+        
+        
         // IOU threshold
         if (not this->nh_.getParam(this->ns_ + "/filtering_BBox_IOU_threshold", this->boxIOUThresh_)){
             this->boxIOUThresh_ = 0.5;
@@ -1087,111 +1105,6 @@ namespace onboardDetector{
 
 
 
-    // void dynamicDetector::lidarCloudCB(const sensor_msgs::PointCloud2ConstPtr& cloudMsg){
-    //     try {
-    //         if (this->hasSensorPose_){
-    //             ros::Time start = ros::Time::now();
-    //             this->latest_cloud_ = cloudMsg;
-    //             // local cloud
-    //             pcl::PointCloud<pcl::PointXYZ>::Ptr tempCloud (new pcl::PointCloud<pcl::PointXYZ>());
-    //             pcl::fromROSMsg(*cloudMsg, *tempCloud);
-
-    //             // filter and downsample pointcloud
-    //             // Create a filtered cloud pointer to store intermediate results
-    //             pcl::PointCloud<pcl::PointXYZ>::Ptr filteredCloud (new pcl::PointCloud<pcl::PointXYZ>());
-
-    //             // Apply a pass-through filter to limit points to the local sensor range in X, Y, and Z axes
-    //             pcl::PassThrough<pcl::PointXYZ> pass;
-
-    //             // Filter for X axis
-    //             pass.setInputCloud(tempCloud);
-    //             pass.setFilterFieldName("x");
-    //             pass.setFilterLimits(-this->localLidarRange_.x(), this->localLidarRange_.x());
-    //             pass.filter(*filteredCloud);
-
-    //             // Filter for Y axis
-    //             pass.setInputCloud(filteredCloud);
-    //             pass.setFilterFieldName("y");
-    //             pass.setFilterLimits(-this->localLidarRange_.y(), this->localLidarRange_.y());
-    //             pass.filter(*filteredCloud);
-
-    //             int sigma = this->gaussianDownSampleRate_;
-    
-    //             pcl::PointCloud<pcl::PointXYZ>::Ptr preTransformCloud(new pcl::PointCloud<pcl::PointXYZ>());
-    //             preTransformCloud->reserve(filteredCloud->size());
-
-    //             for (pcl::PointXYZ &pt : filteredCloud->points) {
-    //                 double dist = sqrt(pt.x * pt.x + pt.y * pt.y);
-    //                 double p = std::exp(-(dist * dist) / (2 * sigma * sigma));
-
-    //                 double r = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-    //                 if (r < p) {
-    //                     preTransformCloud->push_back(pt);
-    //                 }
-    //             }
-    //             // ROS_INFO("Gaussian downsample rate: %f", float(preTransformCloud->size()) / float(filteredCloud->size()));
-
-    //             // transform
-    //             Eigen::Affine3d transform = Eigen::Affine3d::Identity();
-    //             transform.linear() = this->orientationLidar_;
-    //             transform.translation() = this->positionLidar_;
-
-    //             // map cloud
-    //             // Create an empty point cloud to store the transformed data
-    //             pcl::PointCloud<pcl::PointXYZ>::Ptr transformedCloud (new pcl::PointCloud<pcl::PointXYZ>());
-
-    //             // Apply the transformation
-    //             pcl::transformPointCloud(*preTransformCloud, *transformedCloud, transform);
-
-    //             // filter roof and ground 
-    //             pcl::PointCloud<pcl::PointXYZ>::Ptr groundRoofFilterCloud (new pcl::PointCloud<pcl::PointXYZ>());
-    //             pass.setInputCloud(transformedCloud);
-    //             pass.setFilterFieldName("z");
-    //             pass.setFilterLimits(this->groundHeight_, this->roofHeight_);
-    //             pass.filter(*groundRoofFilterCloud);
-
-    //             pcl::PointCloud<pcl::PointXYZ>::Ptr downsampledCloud = groundRoofFilterCloud;
-    //             // Create the VoxelGrid filter object
-    //             pcl::VoxelGrid<pcl::PointXYZ> sor;
-    //             // sor.setInputCloud(filteredCloud);
-    //             sor.setInputCloud(groundRoofFilterCloud);
-
-    //             // Set the leaf size (adjust to control the downsampling)
-    //             sor.setLeafSize(0.1f, 0.1f, 0.1f); // Try different values based on your point cloud density
-
-    //             // output downsampled cloud size
-    //             ROS_INFO("Initial Downsampled Size: %d", int(downsampledCloud->size()));
-
-    //             // If the downsampled cloud has more than certain points, further increase the leaf size
-    //             while (int(downsampledCloud->size()) > this->downSampleThresh_) {
-    //                 double leafSize = sor.getLeafSize().x() * 1.1f; // Increase the leaf size to reduce point count
-    //                 sor.setLeafSize(leafSize, leafSize, leafSize);
-    //                 sor.filter(*downsampledCloud);
-    //             }
-
-    //             this->lidarCloud_ = downsampledCloud;
-    //             sensor_msgs::PointCloud2 outputCloud;
-    //             pcl::toROSMsg(*this->lidarCloud_, outputCloud); // Convert to ROS message
-    //             outputCloud.header.frame_id = "map";    // Set appropriate frame ID
-    //             // this->downSamplePointsPub_.publish(outputCloud);
-    //             ROS_INFO("Downsampled Size: %d", int(downsampledCloud->size()));
-
-    //             ros::Time end = ros::Time::now();
-    //             double currentDetectionTime = (end - start).toSec();
-    //             ROS_INFO("Downsampled Time: %.8f sec", currentDetectionTime);
-    //         }
-    //     }
-    //     catch (const pcl::PCLException& e) {
-    //         ROS_ERROR("PCL Exception during conversion: %s", e.what());
-    //     }
-    //     catch (const std::exception& e) {
-    //         ROS_ERROR("Standard Exception during conversion: %s", e.what());
-    //     }
-    //     catch (...) {
-    //         ROS_ERROR("Unknown error during point cloud conversion.");
-    //     }
-    // }
-
     void dynamicDetector::lidarCloudCB(const sensor_msgs::PointCloud2ConstPtr& cloudMsg) {
         try {
             if (!this->hasSensorPose_) {
@@ -1263,70 +1176,9 @@ namespace onboardDetector{
 
             ROS_INFO("Initial Downsampled Size: %zu", groundRoofFilterCloud->size());
     
-            // 6. Final downsampling with adaptive strategy
+            // 6. Final downsampling with unified callback
             pcl::PointCloud<pcl::PointXYZ>::Ptr downsampledCloud(new pcl::PointCloud<pcl::PointXYZ>());
-            
-            if (this->useAttentionDownsampling_) {
-                // Use optimized attention-based downsampling
-                attentionBasedDownsampling(groundRoofFilterCloud, downsampledCloud);
-            } else {
-                // Keep original predictive VoxelGrid downsampling
-                pcl::VoxelGrid<pcl::PointXYZ> sor;
-                sor.setInputCloud(groundRoofFilterCloud);
-                
-                size_t current_points = groundRoofFilterCloud->size();
-                size_t target_points = this->downSampleThresh_;
-                
-                if (current_points > target_points) {
-                    // Simple one-shot predictive VoxelGrid downsampling
-                    float base_leaf_size = 0.05f; // A sensible default
-                    double scale_factor = cbrt(static_cast<double>(current_points) / target_points);
-                    float new_leaf_size = static_cast<float>(base_leaf_size * scale_factor);
-                    
-                    // Add adaptive constraints
-                    new_leaf_size = std::min(new_leaf_size, 0.8f);  // Maximum leaf size
-                    new_leaf_size = std::max(new_leaf_size, 0.03f); // Minimum leaf size
-                    
-                    sor.setLeafSize(new_leaf_size, new_leaf_size, new_leaf_size);
-                    sor.filter(*downsampledCloud);
-                    
-                    // Post-check: adjust leaf size if points are too many or too few (if refine is enabled)
-                    if (this->enableDownsampleRefine_) {
-                        size_t result_points = downsampledCloud->size();
-                        if (result_points > target_points * 1.1 || result_points < target_points * 0.9) { // 10% tolerance
-                            const int max_refine_iterations = 2; // Only 2 iterations for refinement
-                            float refine_leaf_size = new_leaf_size;
-                            
-                            for (int iter = 0; iter < max_refine_iterations; ++iter) {
-                                if (result_points > target_points) {
-                                    // Too many points, increase leaf size to reduce
-                                    double excess_ratio = static_cast<double>(result_points) / target_points;
-                                    refine_leaf_size *= std::pow(excess_ratio, 1.0/3.0);
-                                } else {
-                                    // Too few points, decrease leaf size to increase
-                                    double deficit_ratio = static_cast<double>(target_points) / result_points;
-                                    refine_leaf_size /= std::pow(deficit_ratio, 1.0/3.0);
-                                }
-                                
-                                // Apply constraints
-                                refine_leaf_size = std::min(refine_leaf_size, 0.8f);
-                                refine_leaf_size = std::max(refine_leaf_size, 0.03f);
-                                
-                                sor.setLeafSize(refine_leaf_size, refine_leaf_size, refine_leaf_size);
-                                sor.filter(*downsampledCloud);
-                                
-                                result_points = downsampledCloud->size();
-                                if (result_points >= target_points * 0.9 && result_points <= target_points * 1.1) {
-                                    break; // Within 10% tolerance, stop
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    sor.setLeafSize(0.1f, 0.1f, 0.1f); // Use default if already sparse
-                    sor.filter(*downsampledCloud);
-                }
-            }
+            this->downsamplingCB(groundRoofFilterCloud, downsampledCloud);
     
             this->lidarCloud_ = downsampledCloud;
             ROS_INFO("Downsampled Size: %zu", downsampledCloud->size()); // Use %zu for size_t
@@ -3216,5 +3068,181 @@ namespace onboardDetector{
 		
 		ROS_INFO("Attention downsampling: %zu -> %zu points (distance-based selection)", 
 				 input_cloud->size(), output_cloud->size());
+	}
+
+	void dynamicDetector::fpsRefine(
+		const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
+		pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud,
+		size_t target_points) {
+		
+		if (input_cloud->empty()) {
+			output_cloud = input_cloud;
+			return;
+		}
+		
+		// Store original input size before processing
+		size_t original_input_size = input_cloud->size();
+		
+		// Convert PCL to Open3D for FPS
+		open3d::geometry::PointCloud o3d_cloud;
+		o3d_cloud.points_.reserve(input_cloud->size());
+		
+		for (const auto& pt : input_cloud->points) {
+			o3d_cloud.points_.emplace_back(pt.x, pt.y, pt.z);
+		}
+		
+		// Apply Farthest Point Sampling
+		std::shared_ptr<open3d::geometry::PointCloud> fps_cloud;
+		try {
+			fps_cloud = o3d_cloud.FarthestPointDownSample(target_points);
+		} catch (const std::exception& e) {
+			ROS_ERROR("FPS refine failed: %s", e.what());
+			*output_cloud = *input_cloud;
+			return;
+		}
+		
+		// Convert back to PCL
+		output_cloud->clear();
+		output_cloud->reserve(fps_cloud->points_.size());
+		
+		for (const auto& pt : fps_cloud->points_) {
+			pcl::PointXYZ pcl_pt;
+			pcl_pt.x = pt(0);
+			pcl_pt.y = pt(1);
+			pcl_pt.z = pt(2);
+			output_cloud->push_back(pcl_pt);
+		}
+		
+		ROS_INFO("FPS refine: %zu -> %zu points", 
+				 original_input_size, output_cloud->size());
+	}
+
+	void dynamicDetector::voxelGridRefine(
+		pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud,
+		size_t target_points,
+		float initial_leaf_size) {
+		
+		if (output_cloud->empty()) {
+			return;
+		}
+		
+		size_t result_points = output_cloud->size();
+		
+		// Check if refinement is needed (10% tolerance)
+		if (result_points > target_points * 1.1 || result_points < target_points * 0.9) {
+			const int max_refine_iterations = 2;
+			float refine_leaf_size = initial_leaf_size;
+			
+			pcl::VoxelGrid<pcl::PointXYZ> sor;
+			sor.setInputCloud(output_cloud);
+			
+			for (int iter = 0; iter < max_refine_iterations; ++iter) {
+				if (result_points > target_points) {
+					double excess_ratio = static_cast<double>(result_points) / target_points;
+					refine_leaf_size *= std::pow(excess_ratio, 1.0/3.0);
+				} else {
+					double deficit_ratio = static_cast<double>(target_points) / result_points;
+					refine_leaf_size /= std::pow(deficit_ratio, 1.0/3.0);
+				}
+				
+				refine_leaf_size = std::min(refine_leaf_size, 0.8f);
+				refine_leaf_size = std::max(refine_leaf_size, 0.03f);
+				
+				sor.setLeafSize(refine_leaf_size, refine_leaf_size, refine_leaf_size);
+				sor.filter(*output_cloud);
+				
+				result_points = output_cloud->size();
+				if (result_points >= target_points * 0.9 && result_points <= target_points * 1.1) {
+					break;
+				}
+			}
+		}
+	}
+
+
+	void dynamicDetector::downsamplingCB(
+		const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
+		pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud) {
+		
+		if (input_cloud->empty()) {
+			output_cloud = input_cloud;
+			return;
+		}
+		
+		// Choose downsampling method based on configuration
+		if (this->useAttentionDownsampling_) {
+			// Use optimized attention-based downsampling
+			attentionBasedDownsampling(input_cloud, output_cloud);
+		} else {
+			// Use VoxelGrid downsampling (with FPS fallback if refine fails)
+			voxelGridDownsampling(input_cloud, output_cloud);
+		}
+	}
+
+	void dynamicDetector::voxelGridDownsampling(
+		const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
+		pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud) {
+		
+		if (input_cloud->empty()) {
+			output_cloud = input_cloud;
+			return;
+		}
+		
+		// Traditional predictive VoxelGrid downsampling
+		pcl::VoxelGrid<pcl::PointXYZ> sor;
+		sor.setInputCloud(input_cloud);
+		
+		size_t current_points = input_cloud->size();
+		size_t target_points = this->downSampleThresh_;
+		
+		if (current_points > target_points) {
+			// Simple one-shot predictive VoxelGrid downsampling
+			float base_leaf_size = 0.05f; // A sensible default
+			double scale_factor = cbrt(static_cast<double>(current_points) / target_points);
+			float new_leaf_size = static_cast<float>(base_leaf_size * scale_factor);
+			
+			// Add adaptive constraints
+			new_leaf_size = std::min(new_leaf_size, 0.8f);  // Maximum leaf size
+			new_leaf_size = std::max(new_leaf_size, 0.03f); // Minimum leaf size
+			
+			sor.setLeafSize(new_leaf_size, new_leaf_size, new_leaf_size);
+			sor.filter(*output_cloud);
+			
+		// Apply refine based on selected mode
+		if (this->enableDownsampleRefine_) {
+			size_t result_points = output_cloud->size();
+			
+			if (this->refineMode_ == 0) {
+				// Pure VoxelGrid refine mode
+				voxelGridRefine(output_cloud, target_points, new_leaf_size);
+				ROS_INFO("Pure VoxelGrid refine (mode 0): %zu -> %zu points", 
+						 input_cloud->size(), output_cloud->size());
+				
+			} else if (this->refineMode_ == 1) {
+				// FPS refine mode - only use FPS if needed
+				if (result_points > target_points * 1.1) {
+					fpsRefine(output_cloud, output_cloud, target_points);
+				}
+				
+			} else if (this->refineMode_ == 2) {
+				// Hybrid mode: VoxelGrid refine first, then FPS if needed
+				voxelGridRefine(output_cloud, target_points, new_leaf_size);
+				result_points = output_cloud->size();
+				
+				// If VoxelGrid refine still fails, use FPS as fallback
+				if (result_points > target_points * 1.1) { 
+					ROS_INFO("VoxelGrid refine failed, using FPS fallback (mode 2): %zu -> %zu points", 
+							 result_points, target_points);
+					fpsRefine(output_cloud, output_cloud, target_points);
+					return;
+				}
+				ROS_INFO("Hybrid refine (mode 2): %zu -> %zu points", 
+						 input_cloud->size(), output_cloud->size());
+			}
+		}
+		} else {
+			sor.setLeafSize(0.1f, 0.1f, 0.1f); // Use default if already sparse
+			sor.filter(*output_cloud);
+		}
 	}
 }
