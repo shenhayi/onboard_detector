@@ -148,11 +148,6 @@ namespace onboardDetector{
         double attentionDensityWeightMax_;
         int attentionMinNeighborPoints_;
         
-        // VoxelGrid + FPS downsampling parameters
-        bool useVoxelFpsDownsampling_;
-        double voxelFpsLeafSize_;
-        int fpsMaxIterations_;
-        
 
 
         // LiDAR Visual Filtering
@@ -335,38 +330,10 @@ namespace onboardDetector{
                                   Eigen::Vector3d& newCenter, Eigen::Vector3d& newSize);
         int getBestOverlapBBox(const onboardDetector::box3D& currBBox, const std::vector<onboardDetector::box3D>& targetBBoxes, double& bestIOU);
         
-        // Unified downsampling interface
-        void performDownsampling(
-            const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
-            pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud);
-            
         // Optimized attention-based downsampling
         void attentionBasedDownsampling(
             const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
             pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud);
-            
-        // VoxelGrid + FPS combination downsampling
-        void voxelFpsDownsampling(
-            const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
-            pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud);
-            
-        // Traditional VoxelGrid downsampling
-        void voxelGridDownsampling(
-            const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
-            pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud);
-            
-            
-        // FPS algorithm implementation (CPU version using Open3D)
-        void fpsDownsamplingCpu(
-            const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
-            pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud,
-            int target_points);
-            
-        // Custom FPS implementation as fallback
-        void fpsDownsamplingCustom(
-            const pcl::PointCloud<pcl::PointXYZ>::Ptr& input_cloud,
-            pcl::PointCloud<pcl::PointXYZ>::Ptr& output_cloud,
-            int target_points);
         
 
 
