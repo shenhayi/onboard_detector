@@ -54,7 +54,7 @@ dbscan_search_range_epsilon: 0.05 # searching range radius
 lidar_DBSCAN_min_points: 10
 lidar_DBSCAN_epsilon: 0.05
 
-downsample_threshold: 3500 # threshold for downsampling
+downsample_threshold: 3000 # threshold for downsampling
 use_gaussian_downsampling: true # Enable/disable Gaussian probability downsampling
 gaussian_downsample_rate: 10
 enable_downsample_refine: true # Enable/disable VoxelGrid refinement iterations
@@ -65,6 +65,11 @@ attention_search_radius: 1.5       # Local density search radius (meters) - redu
 attention_distance_decay_factor: 15.0  # Distance decay factor for attention weights - stronger near-field bias
 attention_density_weight_max: 1.5      # Maximum density weight multiplier
 attention_min_neighbor_points: 3       # Minimum neighbor points for density calculation
+
+# VoxelGrid + FPS downsampling parameters
+use_voxel_fps_downsampling: true # Enable/disable VoxelGrid + FPS combination downsampling
+voxel_fps_leaf_size: 0.05          # Manual VoxelGrid leaf size for FPS preprocessing (compared with calculated optimal)
+fps_max_iterations: 1000          # Maximum iterations for FPS algorithm (fallback implementation)
 
 
 
