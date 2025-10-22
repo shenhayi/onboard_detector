@@ -1,5 +1,5 @@
 localization_mode: 0 # 0: pose+camera+lidar, 1: odom+camera+lidar, 2: pose+lidar-only, 3: odom+lidar-only
-data_save_folder: /home/haoyus/Packages/SUSTechPOINTS/data/cage_occ_4_v_r10
+data_save_folder: /tmp/data
 eval: false
 
 # Data saving control parameters
@@ -7,19 +7,19 @@ save_pointcloud: false   # Enable/disable point cloud saving
 save_detection_boxes: false  # Enable/disable detection box saving
 
 # Unitree Go2 support
-is_unitree_go2: false # Enable Unitree Go2 specific sensor transforms
+is_unitree_go2: true # Enable Unitree Go2 specific sensor transforms
 
 # ROS Topics
-depth_image_topic: /camera/depth/image_rect_raw
-color_image_topic: /camera/color/image_raw
-lidar_pointcloud_topic: /pointcloud
-pose_topic: /mavros/local_position/pose
-odom_topic: /mavros/local_position/odom
+depth_image_topic: /unitree_go2/front_cam/depth/image_rect_raw
+color_image_topic: /unitree_go2/front_cam/color/image_raw
+lidar_pointcloud_topic: /unitree_go2/lidar/point_cloud
+pose_topic: /unitree_go2/pose
+odom_topic: /unitree_go2/odom
 
 # Camera Parameters
-depth_intrinsics: [385.3096008300781, 385.3096008300781, 324.7971496582031, 237.722900390625] # fx,  fy, cx, cy realsense
-color_intrinsics: [606.3120727539062, 605.92626953125, 314.6913146972656, 252.1909942626953] # intel realsense
-depth_scale_factor: 1000 # 1000 for Intel Realsense Camera
+depth_intrinsics: [386.22674560546875, 386.22674560546875, 317.3930969238281, 239.78431701660156] # fx, fy, cx, cy realsense
+color_intrinsics: [608.08740234375, 608.08740234375, 317.48284912109375, 234.11557006835938] # intel realsense
+depth_scale_factor: 1000.0 # 1000 for Intel Realsense Camera
 depth_min_value: 0.5
 depth_max_value: 5.0
 depth_filter_margin: 10 # filter
@@ -27,19 +27,19 @@ depth_skip_pixel: 2  # filter
 image_cols: 640
 image_rows: 480
 
-# Sensor Transforms
+# Sensor Transforms (Default configuration)
 body_to_camera_depth: [0.0,  0.0,  1.0,  0.09,
-                      -1.0,  0.0,  0.0,  0.0 ,   
-                      0.0, -1.0,  0.0,  0.095,
-                      0.0,  0.0,  0.0,  1.0]
+                    -1.0,  0.0,  0.0,  0.0 ,   
+                    0.0, -1.0,  0.0,  0.095,
+                    0.0,  0.0,  0.0,  1.0]
 body_to_camera_color: [0.0,  0.0,  1.0,  0.09,
-                      -1.0,  0.0,  0.0,  0.0 ,   
-                      0.0, -1.0,  0.0,  0.095,
-                      0.0,  0.0,  0.0,  1.0]
-body_to_lidar:  [1.0,  0.0,  0.0,  0.0,
-                 0.0,  1.0,  0.0,  0.0 ,   
-                 0.0,  0.0,  1.0,  0.15,
-                 0.0,  0.0,  0.0,  1.0]
+                    -1.0,  0.0,  0.0,  0.0 ,   
+                    0.0, -1.0,  0.0,  0.095,
+                    0.0,  0.0,  0.0,  1.0]
+body_to_lidar: [1.0,  0.0,  0.0,  0.0,
+                   0.0,  1.0,  0.0,  0.0 ,   
+                   0.0,  0.0,  1.0,  0.15,
+                   0.0,  0.0,  0.0,  1.0]
 
 # Unitree Go2 specific sensor transforms
 # Camera linkage parameters (linkage origin relative to body frame)
@@ -60,11 +60,12 @@ body_to_lidar_go2: [1.0,  0.0,  0.0,  0.1710,
                     0.0,  0.0,  0.0,  1.0]
 
 # System
-time_step: 0.033
+time_step: 0.033 # dt
+raycast_max_length: 5.0 # maximum depth
 
 # DBSCAN Common
-ground_height: 0.2 # height of ground to remove ground points
-roof_height: 2.0 # relative height of roof to remove roof points
+ground_height: 0.0 # height of ground to remove ground points
+roof_height: 3.0 # relative height of roof to remove roof points
 
 # DBSCAN visual param
 voxel_occupied_thresh: 5 # min num of points for a voxel to be occupied in voxel filter
@@ -73,44 +74,42 @@ dbscan_search_range_epsilon: 0.05 # searching range radius
 
 # DBSCAN LiDAR param
 lidar_DBSCAN_min_points: 10
-lidar_DBSCAN_epsilon: 0.05
-
+lidar_DBSCAN_epsilon: 0.1
+lidar_local_range: [10.0, 10.0, 5.0] # x, y, z range in meters
 downsample_threshold: 3500 # threshold for downsampling
-use_gaussian_downsampling: true # Enable/disable Gaussian probability downsampling
 gaussian_downsample_rate: 10
-enable_downsample_refine: true # Enable/disable VoxelGrid refinement iterations
+use_gaussian_downsampling: true # Enable/disable Gaussian probability downsampling
+enable_downsample_refine: false # Enable/disable VoxelGrid refinement iterations
 
 # Attention-based downsampling parameters
 use_attention_downsampling: false # Enable/disable attention-based downsampling
-attention_search_radius: 1.5       # Local density search radius (meters) - reduced for 10m range
-attention_distance_decay_factor: 15.0  # Distance decay factor for attention weights - stronger near-field bias
+attention_search_radius: 1.5       # Local density search radius (meters)
+attention_distance_decay_factor: 15.0  # Distance decay factor for attention weights
 attention_density_weight_max: 1.5      # Maximum density weight multiplier
 attention_min_neighbor_points: 3       # Minimum neighbor points for density calculation
-
-
 
 # LiDAR Visual Filtering
 filtering_BBox_IOU_threshold: 0.2
 
 # Tracking and data association
 max_match_range: 0.5 # max match range between time steps in meters
-max_size_diff_range: 0.5 #  in meter
-feature_weight: [3.0, 3.0, 0.1, 0.5, 0.5, 0.05, 0, 0, 0] # weight for feagent 3pos + 3size +  3 pc centroid
+max_size_diff_range: 0.5 # in meter
+feature_weight: [3.0, 3.0, 0.1, 0.5, 0.5, 0.05, 0.0, 0.0, 0.0] # weight for feature 3pos + 3size + 3 pc centroid
 history_size: 100 # size of tracking history. history[0] is current detection
 fix_size_history_threshold: 10 # History threshold (num of frames) to fix box size
 fix_size_dimension_threshold: 0.4 # dimension threshold (size of proportional) to fix box size
-kalman_filter_param: [0.25, 0.01, 0.05, 0.05, 0.04, 0.3, 0.6]
+kalman_filter_param: [0.25, 0.01, 0.05, 0.05, 0.04, 0.3, 0.6] # e_p, e_q_pos, e_q_vel, e_q_acc, e_r_pos, e_r_vel, e_r_acc
 kalman_filter_averaging_frames: 10
 
 # Classification
-frame_skip: 5 # num of frames skiped when comparing 2 point clouds
-dynamic_velocity_threshold: 0.1
-dynamic_voting_threshold: 0.8
-frames_force_dynamic: 10 # Range of searching dynamic obstacles in box history
-frames_force_dynamic_check_range: 30 # threshold for forcing dynamic obstacles
-dynamic_consistency_threshold: 15 # obstacles being voted as dynamic for continuous k frames are eligible to be classified as dynamic
+frame_skip: 2 # num of frames skiped when comparing 2 point clouds 
+dynamic_velocity_threshold: 0.2 # velocity threshold for dynamic classification
+dynamic_voting_threshold: 0.7 # voting threshold for dynamic classification
+frames_force_dynamic: 5 # Range of searching dynamic obstacles in box history
+frames_force_dynamic_check_range: 10 # threshold for forcing dynamic obstacles
+dynamic_consistency_threshold: 3 #  consecutive frames for dynamic classification
 
 # Constrain size
-target_constrain_size: true
+target_constrain_size: false
 target_object_size: [0.5, 0.5, 1.5]
 max_object_size: [3.0, 3.0, 2.0] # filter out objects that are too large

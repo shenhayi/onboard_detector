@@ -72,7 +72,7 @@ namespace onboardDetector{
             cout << this->hint_ << ": No localization mode option. Use default: pose" << endl;
         }
         else{
-            cout << this->hint_ << ": Localizaiton mode: pose (0)/odom (1). Your option: " << this->localizationMode_ << endl;
+            cout << this->hint_ << ": Localization mode: pose+camera+lidar (0)/odom+camera+lidar (1)/pose+lidar-only (2)/odom+lidar-only (3). Your option: " << this->localizationMode_ << endl;
         }   
 
         // depth topic name
@@ -115,7 +115,7 @@ namespace onboardDetector{
         }
 
         if (this->localizationMode_ == 1){
-            // pose topic name
+            // odom topic name
             if (not this->nh_.getParam(this->ns_ + "/odom_topic", this->odomTopicName_)){
                 this->odomTopicName_ = "/CERLAB/quadcopter/odom";
                 cout << this->hint_ << ": No odom topic name. Use default: /CERLAB/quadcopter/odom" << endl;
@@ -132,6 +132,15 @@ namespace onboardDetector{
             else{
                 cout << this->hint_ << ": Pose topic: " << this->poseTopicName_ << endl;
             } 
+        }
+        if(this->localizationMode_ == 3){
+            if (not this->nh_.getParam(this->ns_ + "/odom_topic", this->odomTopicName_)){
+                this->odomTopicName_ = "/CERLAB/quadcopter/odom";
+                cout << this->hint_ << ": No odom topic name. Use default: /CERLAB/quadcopter/odom" << endl;
+            }
+            else{
+                cout << this->hint_ << ": Odom topic: " << this->odomTopicName_ << endl;
+            }
         }
 
         // depth intrinsics
@@ -232,29 +241,96 @@ namespace onboardDetector{
         // ------------------------------------------------------------------------------------
 
 
-        // transform matrix: body to camera depth
-        std::vector<double> body2CamDepthVec (16);
-        if (not this->nh_.getParam(this->ns_ + "/body_to_camera_depth", body2CamDepthVec)){
-            ROS_ERROR("[dynamicDetector]: Please check body to camera matrix!");
+        // Unitree Go2 configuration
+        if (not this->nh_.getParam(this->ns_ + "/is_unitree_go2", this->isUnitreeGo2_)){
+            this->isUnitreeGo2_ = false;
+            cout << this->hint_ << ": No Unitree Go2 mode. Use default: false" << endl;
         }
         else{
-            for (int i=0; i<4; ++i){
-                for (int j=0; j<4; ++j){
-                    this->body2CamDepth_(i, j) = body2CamDepthVec[i * 4 + j];
+            cout << this->hint_ << ": Unitree Go2 mode: " << (this->isUnitreeGo2_ ? "true" : "false") << endl;
+        }
+
+        // Camera linkage parameters for Go2
+        if (this->isUnitreeGo2_) {
+            if (not this->nh_.getParam(this->ns_ + "/camera_linkage_origin_x", this->cameraLinkageOriginX_)){
+                this->cameraLinkageOriginX_ = 0.1710;
+                cout << this->hint_ << ": No camera linkage origin x. Use default: 0.1710" << endl;
+            }
+            if (not this->nh_.getParam(this->ns_ + "/camera_linkage_origin_y", this->cameraLinkageOriginY_)){
+                this->cameraLinkageOriginY_ = 0.0;
+                cout << this->hint_ << ": No camera linkage origin y. Use default: 0.0" << endl;
+            }
+            if (not this->nh_.getParam(this->ns_ + "/camera_linkage_origin_z", this->cameraLinkageOriginZ_)){
+                this->cameraLinkageOriginZ_ = 0.145;
+                cout << this->hint_ << ": No camera linkage origin z. Use default: 0.145" << endl;
+            }
+            if (not this->nh_.getParam(this->ns_ + "/camera_linkage_length", this->cameraLinkageLength_)){
+                this->cameraLinkageLength_ = 0.02;
+                cout << this->hint_ << ": No camera linkage length. Use default: 0.02" << endl;
+            }
+            if (not this->nh_.getParam(this->ns_ + "/camera_linkage_theta", this->cameraLinkageTheta_)){
+                this->cameraLinkageTheta_ = 0.0;
+                cout << this->hint_ << ": No camera linkage theta. Use default: 0.0" << endl;
+            }
+            
+            cout << this->hint_ << ": Camera linkage origin: [" << this->cameraLinkageOriginX_ 
+                      << ", " << this->cameraLinkageOriginY_ << ", " << this->cameraLinkageOriginZ_ << "]" << endl;
+            cout << this->hint_ << ": Camera linkage length: " << this->cameraLinkageLength_ 
+                      << "m, theta: " << this->cameraLinkageTheta_ << " rad" << endl;
+            
+            // Read Y-axis offset parameters for depth and color cameras
+            if (not this->nh_.getParam(this->ns_ + "/depth_camera_y_offset", this->depthCameraYOffset_)){
+                this->depthCameraYOffset_ = 0.0;
+                cout << this->hint_ << ": No depth camera Y offset. Use default: 0.0" << endl;
+            }
+            if (not this->nh_.getParam(this->ns_ + "/color_camera_y_offset", this->colorCameraYOffset_)){
+                this->colorCameraYOffset_ = 0.005;
+                cout << this->hint_ << ": No color camera Y offset. Use default: 0.005" << endl;
+            }
+            
+            cout << this->hint_ << ": Depth camera Y offset: " << this->depthCameraYOffset_ << endl;
+            cout << this->hint_ << ": Color camera Y offset: " << this->colorCameraYOffset_ << endl;
+        }
+
+        // transform matrix: body to camera depth
+        if (this->isUnitreeGo2_) {
+            // Calculate camera transform matrix dynamically based on linkage parameters
+            this->calculateCameraTransformMatrix(this->body2CamDepth_, true);
+            cout << this->hint_ << ": body2CamDepth_ matrix: " << this->body2CamDepth_ << endl;
+        } else {
+            // Use default static transform
+            std::vector<double> body2CamDepthVec (16);
+            if (not this->nh_.getParam(this->ns_ + "/body_to_camera_depth", body2CamDepthVec)){
+                ROS_ERROR("[dynamicDetector]: Please check body to camera matrix!");
+            }
+            else{
+                for (int i=0; i<4; ++i){
+                    for (int j=0; j<4; ++j){
+                        this->body2CamDepth_(i, j) = body2CamDepthVec[i * 4 + j];
+                    }
                 }
+                cout << this->hint_ << ": Using default depth camera transform" << endl;
             }
         }
         
         // transform matrix: body to camera color
-        std::vector<double> body2CamColorVec (16);
-        if (not this->nh_.getParam(this->ns_ + "/body_to_camera_color", body2CamColorVec)){
-            ROS_ERROR("[dynamicDetector]: Please check body to camera color matrix!");
-        }
-        else{
-            for (int i=0; i<4; ++i){
-                for (int j=0; j<4; ++j){
-                    this->body2CamColor_(i, j) = body2CamColorVec[i * 4 + j];
+        if (this->isUnitreeGo2_) {
+            // Calculate camera transform matrix dynamically based on linkage parameters
+            this->calculateCameraTransformMatrix(this->body2CamColor_, false);
+            cout << this->hint_ << ": body2CamColor_ matrix: " << this->body2CamColor_ << endl;
+        } else {
+            // Use default static transform
+            std::vector<double> body2CamColorVec (16);
+            if (not this->nh_.getParam(this->ns_ + "/body_to_camera_color", body2CamColorVec)){
+                ROS_ERROR("[dynamicDetector]: Please check body to camera color matrix!");
+            }
+            else{
+                for (int i=0; i<4; ++i){
+                    for (int j=0; j<4; ++j){
+                        this->body2CamColor_(i, j) = body2CamColorVec[i * 4 + j];
+                    }
                 }
+                cout << this->hint_ << ": Using default color camera transform" << endl;
             }
         }
 
@@ -743,7 +819,7 @@ namespace onboardDetector{
             this->depthOdomSync_->registerCallback(boost::bind(&dynamicDetector::depthOdomCB, this, _1, _2));
         }
         else if (this->localizationMode_ == 2){
-            // Initialization code, e.g. in constructor:
+            // Pose subscriber for lidar mode
             this->poseSub_.reset(
                 new message_filters::Subscriber<geometry_msgs::PoseStamped>(
                     this->nh_,
@@ -754,6 +830,20 @@ namespace onboardDetector{
             // Register your callback with the message_filters subscriber
             this->poseSub_->registerCallback(
                 boost::bind(&dynamicDetector::lidarPoseCB, this, _1)
+            );
+        }
+        else if (this->localizationMode_ == 3){
+            // Odom subscriber for lidar mode
+            this->odomSub_.reset(
+                new message_filters::Subscriber<nav_msgs::Odometry>(
+                    this->nh_,
+                    this->odomTopicName_,
+                    30
+                )
+            );
+            // Register your callback with the message_filters subscriber
+            this->odomSub_->registerCallback(
+                boost::bind(&dynamicDetector::lidarOdomCB, this, _1)
             );
         }
         else{
@@ -927,8 +1017,56 @@ namespace onboardDetector{
     }
 
     void dynamicDetector::lidarPoseCB(const geometry_msgs::PoseStampedConstPtr& pose){
+        // Check for valid pose data
+        if (std::isfinite(pose->pose.position.x) && std::isfinite(pose->pose.position.y) && std::isfinite(pose->pose.position.z)) {
+            this->position_(0) = pose->pose.position.x;
+            this->position_(1) = pose->pose.position.y;
+            this->position_(2) = pose->pose.position.z;
+        } else {
+            ROS_WARN("[dynamicDetector] lidarPoseCB: Invalid pose data received: x=%f, y=%f, z=%f", 
+                       pose->pose.position.x, pose->pose.position.y, pose->pose.position.z);
+            // Keep previous position or set to zero
+            if (this->position_.norm() > 1e6) { // If position is already invalid
+                this->position_.setZero();
+            }
+        }
+        
+        // Update orientation
+        Eigen::Quaterniond robotQuat = Eigen::Quaterniond(pose->pose.orientation.w, pose->pose.orientation.x, pose->pose.orientation.y, pose->pose.orientation.z);
+        this->orientation_ = robotQuat.toRotationMatrix();
+        
+        // Update lidar-specific pose
         Eigen::Matrix4d lidarPoseMatrix;
         this->getLidarPose(pose, lidarPoseMatrix);
+        this->positionLidar_(0) = lidarPoseMatrix(0, 3);
+        this->positionLidar_(1) = lidarPoseMatrix(1, 3);
+        this->positionLidar_(2) = lidarPoseMatrix(2, 3);
+        this->orientationLidar_ = lidarPoseMatrix.block<3, 3>(0, 0);
+        this->hasSensorPose_ = true;
+    }
+
+    void dynamicDetector::lidarOdomCB(const nav_msgs::OdometryConstPtr& odom){
+        // Check for valid odom data
+        if (std::isfinite(odom->pose.pose.position.x) && std::isfinite(odom->pose.pose.position.y) && std::isfinite(odom->pose.pose.position.z)) {
+            this->position_(0) = odom->pose.pose.position.x;
+            this->position_(1) = odom->pose.pose.position.y;
+            this->position_(2) = odom->pose.pose.position.z;
+        } else {
+            ROS_WARN("[dynamicDetector] lidarOdomCB: Invalid odom data received: x=%f, y=%f, z=%f", 
+                       odom->pose.pose.position.x, odom->pose.pose.position.y, odom->pose.pose.position.z);
+            // Keep previous position or set to zero
+            if (this->position_.norm() > 1e6) { // If position is already invalid
+                this->position_.setZero();
+            }
+        }
+        
+        // Update orientation
+        Eigen::Quaterniond robotQuat = Eigen::Quaterniond(odom->pose.pose.orientation.w, odom->pose.pose.orientation.x, odom->pose.pose.orientation.y, odom->pose.pose.orientation.z);
+        this->orientation_ = robotQuat.toRotationMatrix();
+        
+        // Update lidar-specific pose
+        Eigen::Matrix4d lidarPoseMatrix;
+        this->getLidarPose(odom, lidarPoseMatrix);
         this->positionLidar_(0) = lidarPoseMatrix(0, 3);
         this->positionLidar_(1) = lidarPoseMatrix(1, 3);
         this->positionLidar_(2) = lidarPoseMatrix(2, 3);
@@ -3217,4 +3355,68 @@ namespace onboardDetector{
 		ROS_INFO("Attention downsampling: %zu -> %zu points (distance-based selection)", 
 				 input_cloud->size(), output_cloud->size());
 	}
+}
+
+void onboardDetector::dynamicDetector::calculateCameraTransformMatrix(Eigen::Matrix4d& transform, bool isDepthCamera) {
+    // Calculate camera position based on linkage parameters
+    // Linkage rotates around Y-axis by theta angle
+    // Camera is positioned at linkage_length distance from linkage origin
+    
+    // Add Y-axis offset for depth and color cameras to base origin_y
+    double cameraYOffset = isDepthCamera ? this->depthCameraYOffset_ : this->colorCameraYOffset_;
+    double originY = this->cameraLinkageOriginY_ + cameraYOffset;
+    
+    double cos_theta = std::cos(-this->cameraLinkageTheta_);
+    double sin_theta = std::sin(-this->cameraLinkageTheta_);
+    
+    // Calculate camera position relative to body frame
+    // When theta=0, linkage points in body Z+ direction (forward)
+    // When theta changes, linkage rotates around body Y-axis
+    // Camera is at linkage origin + linkage_length in the rotated direction
+    double camera_x = this->cameraLinkageOriginX_ + this->cameraLinkageLength_ * sin_theta;
+    double camera_y = originY;
+    double camera_z = this->cameraLinkageOriginZ_ + this->cameraLinkageLength_ * cos_theta;
+    
+    // Camera orientation: 
+    // D435 default orientation: camera X = body Z+, camera Y = body -X, camera Z = body -Y
+    // When theta=0, camera maintains this default orientation
+    // When theta changes, camera rotates around body frame Y-axis due to linkage rotation
+    
+    // Default camera orientation matrix (from config)
+    Eigen::Matrix4d defaultOrientation = Eigen::Matrix4d::Identity();
+    defaultOrientation(0, 0) = 0.0;   defaultOrientation(0, 1) = 0.0;   defaultOrientation(0, 2) = 1.0;   // camera X = body Z+
+    defaultOrientation(1, 0) = -1.0;  defaultOrientation(1, 1) = 0.0;  defaultOrientation(1, 2) = 0.0;  // camera Y = body -X
+    defaultOrientation(2, 0) = 0.0;   defaultOrientation(2, 1) = -1.0;  defaultOrientation(2, 2) = 0.0; // camera Z = body -Y
+    
+    // Rotation around body frame Y-axis (linkage rotation)
+    Eigen::Matrix4d yRotation = Eigen::Matrix4d::Identity();
+    yRotation(0, 0) = cos_theta;   // X component
+    yRotation(0, 2) = sin_theta;   // Z component
+    yRotation(2, 0) = -sin_theta;  // X component
+    yRotation(2, 2) = cos_theta;   // Z component
+    
+    // Apply rotation to default orientation
+    transform = yRotation * defaultOrientation;
+    
+    // Translation part
+    transform(0, 3) = camera_x;
+    transform(1, 3) = camera_y;
+    transform(2, 3) = camera_z;
+    
+    // Bottom row remains [0, 0, 0, 1]
+    transform(3, 0) = 0.0;
+    transform(3, 1) = 0.0;
+    transform(3, 2) = 0.0;
+    transform(3, 3) = 1.0;
+    
+    std::cout << this->hint_ << ": Calculated " << (isDepthCamera ? "depth" : "color") 
+              << " camera transform matrix for linkage theta=" << this->cameraLinkageTheta_ 
+              << " rad, position=[" << camera_x << ", " << camera_y << ", " << camera_z << "]" << std::endl;
+    
+    // Debug: Print the transform matrix for verification
+    std::cout << this->hint_ << ": Transform matrix:" << std::endl;
+    std::cout << "[" << transform(0,0) << ", " << transform(0,1) << ", " << transform(0,2) << ", " << transform(0,3) << "]" << std::endl;
+    std::cout << "[" << transform(1,0) << ", " << transform(1,1) << ", " << transform(1,2) << ", " << transform(1,3) << "]" << std::endl;
+    std::cout << "[" << transform(2,0) << ", " << transform(2,1) << ", " << transform(2,2) << ", " << transform(2,3) << "]" << std::endl;
+    std::cout << "[" << transform(3,0) << ", " << transform(3,1) << ", " << transform(3,2) << ", " << transform(3,3) << "]" << std::endl;
 }

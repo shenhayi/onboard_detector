@@ -115,6 +115,14 @@ namespace onboardDetector{
         std::string lidarTopicName_;
         std::string poseTopicName_;
         std::string odomTopicName_;
+        
+        // Unitree Go2 support
+        bool isUnitreeGo2_;
+        double cameraLinkageOriginX_, cameraLinkageOriginY_, cameraLinkageOriginZ_;
+        double cameraLinkageLength_;
+        double cameraLinkageTheta_;
+        double depthCameraYOffset_;
+        double colorCameraYOffset_;
 
         // System
         double dt_;
@@ -271,6 +279,7 @@ namespace onboardDetector{
         void depthPoseCB(const sensor_msgs::ImageConstPtr& img, const geometry_msgs::PoseStampedConstPtr& pose);
         void depthOdomCB(const sensor_msgs::ImageConstPtr& img, const nav_msgs::OdometryConstPtr& odom);
         void lidarPoseCB(const geometry_msgs::PoseStampedConstPtr& pose);
+        void lidarOdomCB(const nav_msgs::OdometryConstPtr& odom);
         void colorImgCB(const sensor_msgs::ImageConstPtr& img);
         void yoloDetectionCB(const vision_msgs::Detection2DArrayConstPtr& detections);
         void saveLidarCloudCB(const ros::TimerEvent& event);
@@ -329,6 +338,9 @@ namespace onboardDetector{
         void transformBBox(const Eigen::Vector3d& center, const Eigen::Vector3d& size, const Eigen::Vector3d& position, const Eigen::Matrix3d& orientation,
                                   Eigen::Vector3d& newCenter, Eigen::Vector3d& newSize);
         int getBestOverlapBBox(const onboardDetector::box3D& currBBox, const std::vector<onboardDetector::box3D>& targetBBoxes, double& bestIOU);
+        
+        // Unitree Go2 camera transform calculation
+        void calculateCameraTransformMatrix(Eigen::Matrix4d& transform, bool isDepthCamera = true);
         
         // Optimized attention-based downsampling
         void attentionBasedDownsampling(
