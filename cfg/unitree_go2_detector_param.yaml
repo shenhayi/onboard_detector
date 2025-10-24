@@ -1,4 +1,4 @@
-localization_mode: 2 # 0: pose+camera+lidar, 1: odom+camera+lidar, 2: pose+lidar-only, 3: odom+lidar-only
+localization_mode: 0 # 0: pose+camera+lidar, 1: odom+camera+lidar, 2: pose+lidar-only, 3: odom+lidar-only
 data_save_folder: /tmp/data
 eval: false
 
@@ -17,8 +17,8 @@ pose_topic: /unitree_go2/pose
 odom_topic: /unitree_go2/odom
 
 # Camera Parameters
-depth_intrinsics: [386.22674560546875, 386.22674560546875, 317.3930969238281, 239.78431701660156] # fx, fy, cx, cy realsense
-color_intrinsics: [608.08740234375, 608.08740234375, 317.48284912109375, 234.11557006835938] # intel realsense
+depth_intrinsics: [387.73504638671875, 387.73504638671875, 322.2459411621094, 236.59925842285156] # fx, fy, cx, cy realsense
+color_intrinsics: [606.6041259765625, 606.6041259765625, 327.137939453125, 248.86622619628906] # intel realsense
 depth_scale_factor: 1000.0 # 1000 for Intel Realsense Camera
 depth_min_value: 0.5
 depth_max_value: 5.0
