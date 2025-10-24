@@ -17,7 +17,7 @@ target_classes = ["person"]
 
 
 path_curr = os.path.dirname(__file__)
-img_topic = "/camera/color/image_raw"
+img_topic = "/unitree_go2/front_cam/color/image_raw"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 weight = "weights/weight_AP05:0.253207_280-epoch.pth"
 class_names = "config/coco.names"

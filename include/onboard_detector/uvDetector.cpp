@@ -336,12 +336,15 @@ namespace onboardDetector{
     void UVdetector::detect()
     {
         // extract U map from depth
+        // std::cout << "extract_U_map";
         this->extract_U_map();
 
         // extract bounding box from U map
+        // std::cout << "extract_bb";
         this->extract_bb();
 
         // extract bounding box
+        // std::cout << "extract_bird_view";
         this->extract_bird_view();
 
         // extract object's height

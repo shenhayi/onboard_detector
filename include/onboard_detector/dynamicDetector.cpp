@@ -942,11 +942,13 @@ namespace onboardDetector{
     }
     void dynamicDetector::depthPoseCB(const sensor_msgs::ImageConstPtr& img, const geometry_msgs::PoseStampedConstPtr& pose){
         // store current depth image
+        // ROS_INFO("Start DepthPoseCB");
         cv_bridge::CvImagePtr imgPtr = cv_bridge::toCvCopy(img, img->encoding);
         if (img->encoding == sensor_msgs::image_encodings::TYPE_32FC1){
             (imgPtr->image).convertTo(imgPtr->image, CV_16UC1, this->depthScale_);
         }
         imgPtr->image.copyTo(this->depthImage_);
+        // ROS_INFO("Finsh Depth Image Transfer");
 
         // store current position and orientation (camera)
         Eigen::Matrix4d camPoseDepthMatrix, camPoseColorMatrix, lidarPoseMatrix;
@@ -965,6 +967,7 @@ namespace onboardDetector{
         this->positionDepth_(1) = camPoseDepthMatrix(1, 3);
         this->positionDepth_(2) = camPoseDepthMatrix(2, 3);
         this->orientationDepth_ = camPoseDepthMatrix.block<3, 3>(0, 0);
+        // ROS_INFO("Campose Matrix:", camPoseDepthMatrix);
 
         this->positionColor_(0) = camPoseColorMatrix(0, 3);
         this->positionColor_(1) = camPoseColorMatrix(1, 3);
@@ -976,6 +979,7 @@ namespace onboardDetector{
         this->positionLidar_(2) = lidarPoseMatrix(2, 3);
         this->orientationLidar_ = lidarPoseMatrix.block<3, 3>(0, 0);
         this->hasSensorPose_ = true;
+        // ROS_INFO("Finish Pose CB");
     }
 
     void dynamicDetector::depthOdomCB(const sensor_msgs::ImageConstPtr& img, const nav_msgs::OdometryConstPtr& odom){
@@ -1075,8 +1079,10 @@ namespace onboardDetector{
     }
 
     void dynamicDetector::colorImgCB(const sensor_msgs::ImageConstPtr& img){
+        // ROS_INFO("Into ColorImgCB");
         cv_bridge::CvImagePtr imgPtr = cv_bridge::toCvCopy(img, img->encoding);
         imgPtr->image.copyTo(this->detectedColorImage_);
+        // ROS_INFO("Finish ColorImgCB");
     }
 
     void dynamicDetector::yoloDetectionCB(const vision_msgs::Detection2DArrayConstPtr& detections){
@@ -1333,6 +1339,7 @@ namespace onboardDetector{
     void dynamicDetector::lidarCloudCB(const sensor_msgs::PointCloud2ConstPtr& cloudMsg) {
         try {
             if (!this->hasSensorPose_) {
+                // ROS_INFO("Lidar Pose Vaild");
                 return;
             }
             // add a timer to count the cost time
@@ -1668,6 +1675,7 @@ namespace onboardDetector{
     }
 
     void dynamicDetector::visCB(const ros::TimerEvent&){
+        // ROS_INFO("Into VisCB");
         this->publishUVImages();
         this->publishColorImages();
         
@@ -1689,6 +1697,7 @@ namespace onboardDetector{
 
         this->publishHistoryTraj();
         this->publishVelVis();
+        // ROS_INFO("Finish VisCB");
     }
 
     void dynamicDetector::labelCB(const ros::TimerEvent& event)
@@ -1762,6 +1771,7 @@ namespace onboardDetector{
     }
 
     void dynamicDetector::uvDetect(){
+        // ROS_INFO("Into uvDetect");
         // initialization
         if (this->uvDetector_ == NULL){
             this->uvDetector_.reset(new UVdetector ());
@@ -1775,22 +1785,45 @@ namespace onboardDetector{
 
         // detect from depth mapcalBox
         if (not this->depthImage_.empty()){
+            // ROS_INFO("Get 3D Box from uv");
+            // ROS_INFO("UV:", this->uvDetector_);
+            if(this->uvDetector_ == NULL){
+                // ROS_INFO("UV not inital");
+            }
+            else {
+                // ROS_INFO("UV Initaled")  ;
+            }
             this->uvDetector_->depth = this->depthImage_;
+            // ROS_INFO("Start Detect");
+            // ROS_INFO("UV:", this->uvDetector_);
+            if(this->uvDetector_ == NULL){
+                // ROS_INFO("UV not inital");
+            }
+            else {
+                // ROS_INFO("UV Initaled");
+            }
             this->uvDetector_->detect();
+            // ROS_INFO("Start Extract");
             this->uvDetector_->extract_3Dbox();
-
+            // ROS_INFO("Start Umap");
             this->uvDetector_->display_U_map();
+            // ROS_INFO("Start BEV");
             this->uvDetector_->display_bird_view();
+            // ROS_INFO("Start Display Depth");
             this->uvDetector_->display_depth();
 
             // transform to the world frame (recalculate the boudning boxes)
             std::vector<onboardDetector::box3D> uvBBoxes;
+            // ROS_INFO("Start transfer");
             this->transformUVBBoxes(uvBBoxes);
             this->uvBBoxes_ = uvBBoxes;
+            // ROS_INFO("Finish Get 3D Box");
         }
+        // ROS_INFO("Finishe uvCB");
     }
 
     void dynamicDetector::dbscanDetect(){
+        // ROS_INFO("Into dbscanDetect");
         // 1. get pointcloud
         this->projectDepthImage();
 
@@ -1800,10 +1833,12 @@ namespace onboardDetector{
         // 3. cluster points and get bounding boxes
         this->clusterPointsAndBBoxes(this->filteredDepthPoints_, this->dbBBoxes_, this->pcClustersVisual_, 
                                      this->pcClusterCentersVisual_, this->pcClusterStdsVisual_);
+        // ROS_INFO("Finish dbscanDetect");
     }
 
 
     void dynamicDetector::lidarDetect(){
+        // ROS_INFO("Into lidarDetect");
         if (this->lidarDetector_ == NULL){
             this->lidarDetector_.reset(new lidarDetector());
             this->lidarDetector_->setParams(this->lidarDBEpsilon_, this->lidarDBMinPoints_);
@@ -1832,6 +1867,7 @@ namespace onboardDetector{
     }
 
     void dynamicDetector::filterLVBBoxes(){
+        // ROS_INFO("Into FilterLVBBOX");
         std::vector<onboardDetector::box3D> filteredBBoxesTemp;
         std::vector<std::vector<Eigen::Vector3d>> filteredPcClustersTemp;
         std::vector<Eigen::Vector3d> filteredPcClusterCentersTemp;
@@ -2281,6 +2317,7 @@ namespace onboardDetector{
         this->filteredPcClusters_ = filteredPcClustersTemp;
         this->filteredPcClusterCenters_ = filteredPcClusterCentersTemp;
         this->filteredPcClusterStds_ = filteredPcClusterStdsTemp;
+        ROS_INFO("Finish FilterLVBBOX");
     }
 
     void dynamicDetector::transformUVBBoxes(std::vector<onboardDetector::box3D>& bboxes){
@@ -2691,6 +2728,7 @@ namespace onboardDetector{
     }
 
     void dynamicDetector::kalmanFilterAndUpdateHist(const std::vector<int>& bestMatch){
+        // ROS_INFO("Into KalmanFilter");
         std::vector<std::deque<onboardDetector::box3D>> boxHistTemp; 
         std::vector<std::deque<std::vector<Eigen::Vector3d>>> pcHistTemp;
         std::vector<std::deque<Eigen::Vector3d>> pcCenterHistTemp;
@@ -2798,6 +2836,7 @@ namespace onboardDetector{
 
         // update tracked bounding boxes
         this->trackedBBoxes_=  trackedBBoxesTemp;
+        // ROS_INFO("Finihs KalmanFilter");
     }
 
     void dynamicDetector::kalmanFilterMatrixVel(const onboardDetector::box3D& currDetectedBBox, MatrixXd& states, MatrixXd& A, MatrixXd& B, MatrixXd& H, MatrixXd& P, MatrixXd& Q, MatrixXd& R){

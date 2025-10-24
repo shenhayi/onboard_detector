@@ -64,8 +64,8 @@ time_step: 0.033 # dt
 raycast_max_length: 5.0 # maximum depth
 
 # DBSCAN Common
-ground_height: 0.0 # height of ground to remove ground points
-roof_height: 3.0 # relative height of roof to remove roof points
+ground_height: 0.1 # height of ground to remove ground points
+roof_height: 2.0 # relative height of roof to remove roof points
 
 # DBSCAN visual param
 voxel_occupied_thresh: 5 # min num of points for a voxel to be occupied in voxel filter
@@ -73,10 +73,10 @@ dbscan_min_points_cluster: 20 # 20: 4.0m range; 30: 3.5m range 40: 3.0m range
 dbscan_search_range_epsilon: 0.05 # searching range radius
 
 # DBSCAN LiDAR param
-lidar_DBSCAN_min_points: 10
+lidar_DBSCAN_min_points: 5
 lidar_DBSCAN_epsilon: 0.1
 lidar_local_range: [10.0, 10.0, 5.0] # x, y, z range in meters
-downsample_threshold: 3500 # threshold for downsampling
+downsample_threshold: 2000 # threshold for downsampling
 gaussian_downsample_rate: 10
 use_gaussian_downsampling: true # Enable/disable Gaussian probability downsampling
 enable_downsample_refine: false # Enable/disable VoxelGrid refinement iterations
