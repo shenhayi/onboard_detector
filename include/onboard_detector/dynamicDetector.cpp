@@ -1416,35 +1416,28 @@ namespace onboardDetector{
                 size_t target_points = this->downSampleThresh_;
                 
                 if (current_points > target_points) {
-                    // Simple one-shot predictive VoxelGrid downsampling
-                    float base_leaf_size = 0.05f; // A sensible default
-                    double scale_factor = cbrt(static_cast<double>(current_points) / target_points);
-                    float new_leaf_size = static_cast<float>(base_leaf_size * scale_factor);
-                    
-                    // Add adaptive constraints
-                    new_leaf_size = std::min(new_leaf_size, 0.8f);  // Maximum leaf size
-                    new_leaf_size = std::max(new_leaf_size, 0.03f); // Minimum leaf size
-                    
-                    sor.setLeafSize(new_leaf_size, new_leaf_size, new_leaf_size);
+                    // Use simple iterative downsampling instead of predictive calculation
+                    sor.setLeafSize(0.1f, 0.1f, 0.1f); // Start with reasonable leaf size
                     sor.filter(*downsampledCloud);
                     
-                    // Post-check: adjust leaf size if points are too many or too few (if refine is enabled)
+                    // Iteratively increase leaf size until target is reached
+                    while (int(downsampledCloud->size()) > target_points) {
+                        double leafSize = sor.getLeafSize().x() * 1.1f; // Increase the leaf size to reduce point count
+                        sor.setLeafSize(leafSize, leafSize, leafSize);
+                        sor.filter(*downsampledCloud);
+                    }
+                    
+                    // Fine-tuning: adjust leaf size for better precision if over-downsampled
                     if (this->enableDownsampleRefine_) {
                         size_t result_points = downsampledCloud->size();
-                        if (result_points > target_points * 1.1 || result_points < target_points * 0.9) { // 10% tolerance
+                        if (result_points < target_points * 0.9) { // Only check if too few points
                             const int max_refine_iterations = 2; // Only 2 iterations for refinement
-                            float refine_leaf_size = new_leaf_size;
+                            float refine_leaf_size = sor.getLeafSize().x();
                             
                             for (int iter = 0; iter < max_refine_iterations; ++iter) {
-                                if (result_points > target_points) {
-                                    // Too many points, increase leaf size to reduce
-                                    double excess_ratio = static_cast<double>(result_points) / target_points;
-                                    refine_leaf_size *= std::pow(excess_ratio, 1.0/3.0);
-                                } else {
-                                    // Too few points, decrease leaf size to increase
-                                    double deficit_ratio = static_cast<double>(target_points) / result_points;
-                                    refine_leaf_size /= std::pow(deficit_ratio, 1.0/3.0);
-                                }
+                                // Only decrease leaf size to increase points (since while loop already handles excess)
+                                double deficit_ratio = static_cast<double>(target_points) / result_points;
+                                refine_leaf_size /= std::pow(deficit_ratio, 1.0/3.0);
                                 
                                 // Apply constraints
                                 refine_leaf_size = std::min(refine_leaf_size, 0.8f);
@@ -1454,15 +1447,15 @@ namespace onboardDetector{
                                 sor.filter(*downsampledCloud);
                                 
                                 result_points = downsampledCloud->size();
-                                if (result_points >= target_points * 0.9 && result_points <= target_points * 1.1) {
-                                    break; // Within 10% tolerance, stop
+                                if (result_points >= target_points * 0.9) {
+                                    break; // Within acceptable range, stop
                                 }
                             }
                         }
                     }
                 } else {
-                    sor.setLeafSize(0.1f, 0.1f, 0.1f); // Use default if already sparse
-                    sor.filter(*downsampledCloud);
+                    // No downsampling needed, points already sparse enough
+                    downsampledCloud = groundRoofFilterCloud;
                 }
             }
     

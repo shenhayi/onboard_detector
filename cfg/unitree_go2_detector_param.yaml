@@ -1,4 +1,4 @@
-localization_mode: 0 # 0: pose+camera+lidar, 1: odom+camera+lidar, 2: pose+lidar-only, 3: odom+lidar-only
+localization_mode: 2 # 0: pose+camera+lidar, 1: odom+camera+lidar, 2: pose+lidar-only, 3: odom+lidar-only
 data_save_folder: /tmp/data
 eval: false
 
@@ -102,12 +102,12 @@ kalman_filter_param: [0.25, 0.01, 0.05, 0.05, 0.04, 0.3, 0.6] # e_p, e_q_pos, e_
 kalman_filter_averaging_frames: 10
 
 # Classification
-frame_skip: 2 # num of frames skiped when comparing 2 point clouds 
-dynamic_velocity_threshold: 0.2 # velocity threshold for dynamic classification
-dynamic_voting_threshold: 0.7 # voting threshold for dynamic classification
-frames_force_dynamic: 5 # Range of searching dynamic obstacles in box history
-frames_force_dynamic_check_range: 10 # threshold for forcing dynamic obstacles
-dynamic_consistency_threshold: 3 #  consecutive frames for dynamic classification
+frame_skip: 5 # num of frames skiped when comparing 2 point clouds
+dynamic_velocity_threshold: 0.1
+dynamic_voting_threshold: 0.8
+frames_force_dynamic: 10 # Range of searching dynamic obstacles in box history
+frames_force_dynamic_check_range: 30 # threshold for forcing dynamic obstacles
+dynamic_consistency_threshold: 15 # obstacles being voted as dynamic for continuous k frames are eligible to be classified as dynamic
 
 # Constrain size
 target_constrain_size: false
