@@ -1,4 +1,4 @@
-localization_mode: 0 # 0: pose+camera+lidar, 1: odom+camera+lidar, 2: pose+lidar-only, 3: odom+lidar-only
+localization_mode: 2 # 0: pose+camera+lidar, 1: odom+camera+lidar, 2: pose+lidar-only, 3: odom+lidar-only
 data_save_folder: /tmp/data
 eval: false
 

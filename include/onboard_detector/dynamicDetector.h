@@ -83,6 +83,9 @@ namespace onboardDetector{
         ros::Publisher downSamplePointsPub_;
         ros::Publisher rawDynamicPointsPub_;
         ros::Publisher rawPointsPub_;
+        ros::Publisher depthPosePub_;
+        ros::Publisher colorPosePub_;
+        ros::Publisher lidarPosePub_;
         ros::ServiceServer getDynamicObstacleServer_;
     
         // DETECTOR
@@ -198,8 +201,11 @@ namespace onboardDetector{
         Eigen::Matrix3d orientationDepth_; // depth camera orientation
         Eigen::Vector3d positionColor_; // color camera position
         Eigen::Matrix3d orientationColor_; // color camera orientation
-        Eigen::Vector3d positionLidar_; // color camera position
-        Eigen::Matrix3d orientationLidar_; // color camera orientation
+        Eigen::Vector3d positionLidar_; // lidar position
+        Eigen::Matrix3d orientationLidar_; // lidar orientation
+        Eigen::Matrix4d camPoseDepthMatrix_; // complete camera pose matrix in map frame
+        Eigen::Matrix4d camPoseColorMatrix_; // complete color camera pose matrix in map frame
+        Eigen::Matrix4d lidarPoseMatrix_; // complete lidar pose matrix in map frame
         bool hasSensorPose_;
         Eigen::Vector3d localSensorRange_ {5.0, 5.0, 5.0};
         Eigen::Vector3d localLidarRange_ {10.0, 10.0, 5.0};
@@ -333,6 +339,8 @@ namespace onboardDetector{
         void publishVelVis();
         void publishLidarClusters();
         void publishFilteredPoints();
+        void publishCameraPose();
+        void publishLidarPose();
 
         // helper function
         void transformBBox(const Eigen::Vector3d& center, const Eigen::Vector3d& size, const Eigen::Vector3d& position, const Eigen::Matrix3d& orientation,

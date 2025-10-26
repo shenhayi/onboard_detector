@@ -336,14 +336,28 @@ namespace onboardDetector{
 
         // transform matrix: body to lidar
         std::vector<double> body2LidarVec (16);
-        if (not this->nh_.getParam(this->ns_ + "/body_to_lidar", body2LidarVec)){
-            ROS_ERROR("[dynamicDetector]: Please check body to lidar matrix!");
+        
+        // Check if Unitree Go2 mode is enabled and use appropriate lidar transform
+        if (this->isUnitreeGo2_){
+            if (not this->nh_.getParam(this->ns_ + "/body_to_lidar_go2", body2LidarVec)){
+                ROS_WARN("[dynamicDetector]: Unitree Go2 mode enabled but body_to_lidar_go2 not found, using body_to_lidar");
+                if (not this->nh_.getParam(this->ns_ + "/body_to_lidar", body2LidarVec)){
+                    ROS_ERROR("[dynamicDetector]: Please check body to lidar matrix!");
+                }
+            }
+            else{
+                std::cout << this->hint_ << ": Using Unitree Go2 lidar transform" << std::endl;
+            }
         }
         else{
-            for (int i=0; i<4; ++i){
-                for (int j=0; j<4; ++j){
-                    this->body2Lidar_(i, j) = body2LidarVec[i * 4 + j];
-                }
+            if (not this->nh_.getParam(this->ns_ + "/body_to_lidar", body2LidarVec)){
+                ROS_ERROR("[dynamicDetector]: Please check body to lidar matrix!");
+            }
+        }
+        
+        for (int i=0; i<4; ++i){
+            for (int j=0; j<4; ++j){
+                this->body2Lidar_(i, j) = body2LidarVec[i * 4 + j];
             }
         }
 
@@ -803,6 +817,15 @@ namespace onboardDetector{
         this->rawDynamicPointsPub_ = this->nh_.advertise<sensor_msgs::PointCloud2>(this->ns_ + "/raw_dynamic_point_cloud", 10);
 
         this->rawPointsPub_ = this->nh_.advertise<sensor_msgs::PointCloud2>(this->ns_ + "/raw_point_cloud", 10);
+
+        // depth camera pose pub
+        this->depthPosePub_ = this->nh_.advertise<geometry_msgs::PoseStamped>(this->ns_ + "/depth_camera_pose", 10);
+
+        // color camera pose pub
+        this->colorPosePub_ = this->nh_.advertise<geometry_msgs::PoseStamped>(this->ns_ + "/color_camera_pose", 10);
+
+        // lidar pose pub
+        this->lidarPosePub_ = this->nh_.advertise<geometry_msgs::PoseStamped>(this->ns_ + "/lidar_pose", 10);
     }   
 
     void dynamicDetector::registerCallback(){
@@ -978,6 +1001,12 @@ namespace onboardDetector{
         this->positionLidar_(1) = lidarPoseMatrix(1, 3);
         this->positionLidar_(2) = lidarPoseMatrix(2, 3);
         this->orientationLidar_ = lidarPoseMatrix.block<3, 3>(0, 0);
+        
+        // Save complete pose matrices
+        this->camPoseDepthMatrix_ = camPoseDepthMatrix;
+        this->camPoseColorMatrix_ = camPoseColorMatrix;
+        this->lidarPoseMatrix_ = lidarPoseMatrix;
+        
         this->hasSensorPose_ = true;
         // ROS_INFO("Finish Pose CB");
     }
@@ -1039,13 +1068,31 @@ namespace onboardDetector{
         Eigen::Quaterniond robotQuat = Eigen::Quaterniond(pose->pose.orientation.w, pose->pose.orientation.x, pose->pose.orientation.y, pose->pose.orientation.z);
         this->orientation_ = robotQuat.toRotationMatrix();
         
-        // Update lidar-specific pose
-        Eigen::Matrix4d lidarPoseMatrix;
+        // Update camera and lidar poses
+        Eigen::Matrix4d camPoseDepthMatrix, camPoseColorMatrix, lidarPoseMatrix;
+        this->getCameraPose(pose, camPoseDepthMatrix, camPoseColorMatrix);
         this->getLidarPose(pose, lidarPoseMatrix);
+        
+        this->positionDepth_(0) = camPoseDepthMatrix(0, 3);
+        this->positionDepth_(1) = camPoseDepthMatrix(1, 3);
+        this->positionDepth_(2) = camPoseDepthMatrix(2, 3);
+        this->orientationDepth_ = camPoseDepthMatrix.block<3, 3>(0, 0);
+        
+        this->positionColor_(0) = camPoseColorMatrix(0, 3);
+        this->positionColor_(1) = camPoseColorMatrix(1, 3);
+        this->positionColor_(2) = camPoseColorMatrix(2, 3);
+        this->orientationColor_ = camPoseColorMatrix.block<3, 3>(0, 0);
+        
         this->positionLidar_(0) = lidarPoseMatrix(0, 3);
         this->positionLidar_(1) = lidarPoseMatrix(1, 3);
         this->positionLidar_(2) = lidarPoseMatrix(2, 3);
         this->orientationLidar_ = lidarPoseMatrix.block<3, 3>(0, 0);
+        
+        // Save complete pose matrices
+        this->camPoseDepthMatrix_ = camPoseDepthMatrix;
+        this->camPoseColorMatrix_ = camPoseColorMatrix;
+        this->lidarPoseMatrix_ = lidarPoseMatrix;
+        
         this->hasSensorPose_ = true;
     }
 
@@ -1068,13 +1115,31 @@ namespace onboardDetector{
         Eigen::Quaterniond robotQuat = Eigen::Quaterniond(odom->pose.pose.orientation.w, odom->pose.pose.orientation.x, odom->pose.pose.orientation.y, odom->pose.pose.orientation.z);
         this->orientation_ = robotQuat.toRotationMatrix();
         
-        // Update lidar-specific pose
-        Eigen::Matrix4d lidarPoseMatrix;
+        // Update camera and lidar poses
+        Eigen::Matrix4d camPoseDepthMatrix, camPoseColorMatrix, lidarPoseMatrix;
+        this->getCameraPose(odom, camPoseDepthMatrix, camPoseColorMatrix);
         this->getLidarPose(odom, lidarPoseMatrix);
+        
+        this->positionDepth_(0) = camPoseDepthMatrix(0, 3);
+        this->positionDepth_(1) = camPoseDepthMatrix(1, 3);
+        this->positionDepth_(2) = camPoseDepthMatrix(2, 3);
+        this->orientationDepth_ = camPoseDepthMatrix.block<3, 3>(0, 0);
+        
+        this->positionColor_(0) = camPoseColorMatrix(0, 3);
+        this->positionColor_(1) = camPoseColorMatrix(1, 3);
+        this->positionColor_(2) = camPoseColorMatrix(2, 3);
+        this->orientationColor_ = camPoseColorMatrix.block<3, 3>(0, 0);
+        
         this->positionLidar_(0) = lidarPoseMatrix(0, 3);
         this->positionLidar_(1) = lidarPoseMatrix(1, 3);
         this->positionLidar_(2) = lidarPoseMatrix(2, 3);
         this->orientationLidar_ = lidarPoseMatrix.block<3, 3>(0, 0);
+        
+        // Save complete pose matrices
+        this->camPoseDepthMatrix_ = camPoseDepthMatrix;
+        this->camPoseColorMatrix_ = camPoseColorMatrix;
+        this->lidarPoseMatrix_ = lidarPoseMatrix;
+        
         this->hasSensorPose_ = true;
     }
 
@@ -1697,6 +1762,8 @@ namespace onboardDetector{
 
         this->publishHistoryTraj();
         this->publishVelVis();
+        this->publishCameraPose();
+        this->publishLidarPose();
         // ROS_INFO("Finish VisCB");
     }
 
@@ -2317,7 +2384,7 @@ namespace onboardDetector{
         this->filteredPcClusters_ = filteredPcClustersTemp;
         this->filteredPcClusterCenters_ = filteredPcClusterCentersTemp;
         this->filteredPcClusterStds_ = filteredPcClusterStdsTemp;
-        ROS_INFO("Finish FilterLVBBOX");
+        // ROS_INFO("Finish FilterLVBBOX");
     }
 
     void dynamicDetector::transformUVBBoxes(std::vector<onboardDetector::box3D>& bboxes){
@@ -3405,16 +3472,25 @@ void onboardDetector::dynamicDetector::calculateCameraTransformMatrix(Eigen::Mat
     // When theta=0, linkage points in body Z+ direction (forward)
     // When theta changes, linkage rotates around body Y-axis
     // Camera is at linkage origin + linkage_length in the rotated direction
-    double camera_x = this->cameraLinkageOriginX_ + this->cameraLinkageLength_ * sin_theta;
-    double camera_y = originY;
-    double camera_z = this->cameraLinkageOriginZ_ + this->cameraLinkageLength_ * cos_theta;
+    
+    // Define linkage origin translation in body frame
+    Eigen::Matrix4d linkageOriginTranslation = Eigen::Matrix4d::Identity();
+    linkageOriginTranslation(0, 3) = this->cameraLinkageOriginX_;
+    linkageOriginTranslation(1, 3) = originY;
+    linkageOriginTranslation(2, 3) = this->cameraLinkageOriginZ_;
+    
+    // Define camera offset from linkage origin (in rotated direction due to linkage angle)
+    Eigen::Matrix4d cameraOffsetFromOrigin = Eigen::Matrix4d::Identity();
+    cameraOffsetFromOrigin(0, 3) = this->cameraLinkageLength_ * sin_theta;
+    cameraOffsetFromOrigin(1, 3) = 0.0;
+    cameraOffsetFromOrigin(2, 3) = this->cameraLinkageLength_ * cos_theta;
     
     // Camera orientation: 
     // D435 default orientation: camera X = body Z+, camera Y = body -X, camera Z = body -Y
     // When theta=0, camera maintains this default orientation
     // When theta changes, camera rotates around body frame Y-axis due to linkage rotation
     
-    // Default camera orientation matrix (from config)
+    // Default camera orientation matrix (relative to body frame)
     Eigen::Matrix4d defaultOrientation = Eigen::Matrix4d::Identity();
     defaultOrientation(0, 0) = 0.0;   defaultOrientation(0, 1) = 0.0;   defaultOrientation(0, 2) = 1.0;   // camera X = body Z+
     defaultOrientation(1, 0) = -1.0;  defaultOrientation(1, 1) = 0.0;  defaultOrientation(1, 2) = 0.0;  // camera Y = body -X
@@ -3424,22 +3500,25 @@ void onboardDetector::dynamicDetector::calculateCameraTransformMatrix(Eigen::Mat
     Eigen::Matrix4d yRotation = Eigen::Matrix4d::Identity();
     yRotation(0, 0) = cos_theta;   // X component
     yRotation(0, 2) = sin_theta;   // Z component
-    yRotation(2, 0) = -sin_theta;  // X component
+    yRotation(2, 0) = -sin_theta;  // Z component
     yRotation(2, 2) = cos_theta;   // Z component
     
-    // Apply rotation to default orientation
+    // Apply rotation to default orientation first
     transform = yRotation * defaultOrientation;
     
-    // Translation part
-    transform(0, 3) = camera_x;
-    transform(1, 3) = camera_y;
-    transform(2, 3) = camera_z;
+    // Then apply the offset from linkage origin (rotated) followed by linkage origin translation
+    transform = linkageOriginTranslation * cameraOffsetFromOrigin * transform;
     
     // Bottom row remains [0, 0, 0, 1]
     transform(3, 0) = 0.0;
     transform(3, 1) = 0.0;
     transform(3, 2) = 0.0;
     transform(3, 3) = 1.0;
+    
+    // Calculate final camera position from transform matrix
+    double camera_x = transform(0, 3);
+    double camera_y = transform(1, 3);
+    double camera_z = transform(2, 3);
     
     std::cout << this->hint_ << ": Calculated " << (isDepthCamera ? "depth" : "color") 
               << " camera transform matrix for linkage theta=" << this->cameraLinkageTheta_ 
@@ -3451,4 +3530,71 @@ void onboardDetector::dynamicDetector::calculateCameraTransformMatrix(Eigen::Mat
     std::cout << "[" << transform(1,0) << ", " << transform(1,1) << ", " << transform(1,2) << ", " << transform(1,3) << "]" << std::endl;
     std::cout << "[" << transform(2,0) << ", " << transform(2,1) << ", " << transform(2,2) << ", " << transform(2,3) << "]" << std::endl;
     std::cout << "[" << transform(3,0) << ", " << transform(3,1) << ", " << transform(3,2) << ", " << transform(3,3) << "]" << std::endl;
+}
+
+void onboardDetector::dynamicDetector::publishCameraPose(){
+    // Create pose messages for both depth and color cameras
+    geometry_msgs::PoseStamped depthCameraPoseMsg;
+    geometry_msgs::PoseStamped colorCameraPoseMsg;
+    
+    // Set common header information
+    depthCameraPoseMsg.header.stamp = ros::Time::now();
+    depthCameraPoseMsg.header.frame_id = "map";
+    colorCameraPoseMsg.header.stamp = ros::Time::now();
+    colorCameraPoseMsg.header.frame_id = "map";
+    
+    // Extract position from complete depth camera pose matrix
+    depthCameraPoseMsg.pose.position.x = this->camPoseDepthMatrix_(0, 3);
+    depthCameraPoseMsg.pose.position.y = this->camPoseDepthMatrix_(1, 3);
+    depthCameraPoseMsg.pose.position.z = this->camPoseDepthMatrix_(2, 3);
+    
+    // Extract position from complete color camera pose matrix
+    colorCameraPoseMsg.pose.position.x = this->camPoseColorMatrix_(0, 3);
+    colorCameraPoseMsg.pose.position.y = this->camPoseColorMatrix_(1, 3);
+    colorCameraPoseMsg.pose.position.z = this->camPoseColorMatrix_(2, 3);
+    
+    // Extract rotation from depth camera pose matrix and convert to quaternion
+    Eigen::Matrix3d depthRotationMatrix = this->camPoseDepthMatrix_.block<3,3>(0,0);
+    Eigen::Quaterniond depthQuaternion(depthRotationMatrix);
+    depthCameraPoseMsg.pose.orientation.x = depthQuaternion.x();
+    depthCameraPoseMsg.pose.orientation.y = depthQuaternion.y();
+    depthCameraPoseMsg.pose.orientation.z = depthQuaternion.z();
+    depthCameraPoseMsg.pose.orientation.w = depthQuaternion.w();
+    
+    // Extract rotation from color camera pose matrix and convert to quaternion
+    Eigen::Matrix3d colorRotationMatrix = this->camPoseColorMatrix_.block<3,3>(0,0);
+    Eigen::Quaterniond colorQuaternion(colorRotationMatrix);
+    colorCameraPoseMsg.pose.orientation.x = colorQuaternion.x();
+    colorCameraPoseMsg.pose.orientation.y = colorQuaternion.y();
+    colorCameraPoseMsg.pose.orientation.z = colorQuaternion.z();
+    colorCameraPoseMsg.pose.orientation.w = colorQuaternion.w();
+    
+    // Publish both camera poses
+    this->depthPosePub_.publish(depthCameraPoseMsg);
+    this->colorPosePub_.publish(colorCameraPoseMsg);
+}
+
+void onboardDetector::dynamicDetector::publishLidarPose(){
+    // Create pose message for lidar
+    geometry_msgs::PoseStamped lidarPoseMsg;
+    
+    // Set header information
+    lidarPoseMsg.header.stamp = ros::Time::now();
+    lidarPoseMsg.header.frame_id = "map";
+    
+    // Extract position from complete lidar pose matrix
+    lidarPoseMsg.pose.position.x = this->lidarPoseMatrix_(0, 3);
+    lidarPoseMsg.pose.position.y = this->lidarPoseMatrix_(1, 3);
+    lidarPoseMsg.pose.position.z = this->lidarPoseMatrix_(2, 3);
+    
+    // Extract rotation from lidar pose matrix and convert to quaternion
+    Eigen::Matrix3d lidarRotationMatrix = this->lidarPoseMatrix_.block<3,3>(0,0);
+    Eigen::Quaterniond lidarQuaternion(lidarRotationMatrix);
+    lidarPoseMsg.pose.orientation.x = lidarQuaternion.x();
+    lidarPoseMsg.pose.orientation.y = lidarQuaternion.y();
+    lidarPoseMsg.pose.orientation.z = lidarQuaternion.z();
+    lidarPoseMsg.pose.orientation.w = lidarQuaternion.w();
+    
+    // Publish the lidar pose
+    this->lidarPosePub_.publish(lidarPoseMsg);
 }
