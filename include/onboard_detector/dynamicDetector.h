@@ -25,6 +25,12 @@
 #include <pcl/filters/crop_box.h>
 #include <pcl/kdtree/kdtree_flann.h>
 
+// Thread and concurrency support
+#include <thread>
+#include <mutex>
+#include <future>
+#include <atomic>
+
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
@@ -266,10 +272,24 @@ namespace onboardDetector{
         double classificationTime_;
         double classificationCount_;
     
+        // Thread and synchronization support
+        std::mutex depthImageMutex_;              // Protect depthImage_ access
+        std::mutex lidarCloudMutex_;              // Protect lidarCloud_ access
+        std::mutex lidarBBoxesMutex_;             // Protect lidarBBoxes_ access
+        std::mutex filteredBBoxesMutex_;          // Protect filteredBBoxes_ access
+        std::mutex boxHistMutex_;                 // Protect boxHist_ access
+        std::mutex dynamicBBoxesMutex_;           // Protect dynamicBBoxes_ access
+        std::mutex colorImgMutex_;                // Protect detectedColorImage_ access
+        std::mutex yoloDetMutex_;                 // Protect yoloDetectionResults_ access
+        
+        // Thread management
+        std::vector<std::thread> workerThreads_;  // Worker threads pool
+        std::atomic<bool> running_;               // Flag to control thread lifecycle
 
     public:
         dynamicDetector();
         dynamicDetector(const ros::NodeHandle& nh);
+        ~dynamicDetector();
         void initDetector(const ros::NodeHandle& nh);
 
         void initParam();
@@ -346,6 +366,12 @@ namespace onboardDetector{
         void transformBBox(const Eigen::Vector3d& center, const Eigen::Vector3d& size, const Eigen::Vector3d& position, const Eigen::Matrix3d& orientation,
                                   Eigen::Vector3d& newCenter, Eigen::Vector3d& newSize);
         int getBestOverlapBBox(const onboardDetector::box3D& currBBox, const std::vector<onboardDetector::box3D>& targetBBoxes, double& bestIOU);
+        
+        // Thread worker functions
+        void lidarDetectionThreadWorker();
+        void visionDetectionThreadWorker();
+        void trackingClassificationThreadWorker();
+        void visualizationThreadWorker();
         
         // Unitree Go2 camera transform calculation
         void calculateCameraTransformMatrix(Eigen::Matrix4d& transform, bool isDepthCamera = true);

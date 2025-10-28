@@ -9,16 +9,30 @@ namespace onboardDetector{
     dynamicDetector::dynamicDetector(){
         this->ns_ = "onboard_detector";
         this->hint_ = "[onboardDetector]";
+        this->running_ = true;
     }
 
     dynamicDetector::dynamicDetector(const ros::NodeHandle& nh){
         this->ns_ = "onboard_detector";
         this->hint_ = "[onboardDetector]";
         this->nh_ = nh;
+        this->running_ = true;
         this->initParam();
         this->initSaveFolder();
         this->registerPub();
         this->registerCallback();
+    }
+
+    dynamicDetector::~dynamicDetector(){
+        // Stop all threads
+        this->running_ = false;
+        
+        // Wait for all threads to finish
+        for (auto& thread : this->workerThreads_) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
     }
 
     void dynamicDetector::initDetector(const ros::NodeHandle& nh){
@@ -883,20 +897,18 @@ namespace onboardDetector{
         // lidar point cloud subscriber
         this->lidarCloudSub_ = this->nh_.subscribe(this->lidarTopicName_, 10, &dynamicDetector::lidarCloudCB, this);
 
-        // lidar detection timer
-        this->lidarDetectionTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::lidarDetectionCB, this);
-
-        // detection timer
-        this->detectionTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::detectionCB, this);
-
-        // tracking timer
-        this->trackingTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::trackingCB, this);
-
-        // classification timer
-        this->classificationTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::classificationCB, this);
-    
-        // visualization timer
-        this->visTimer_ = this->nh_.createTimer(ros::Duration(this->dt_), &dynamicDetector::visCB, this);
+        // Create multi-threaded processing
+        // Thread 1: LiDAR Detection (parallel with vision)
+        this->workerThreads_.emplace_back(&dynamicDetector::lidarDetectionThreadWorker, this);
+        
+        // Thread 2: Vision Detection (parallel with lidar)
+        this->workerThreads_.emplace_back(&dynamicDetector::visionDetectionThreadWorker, this);
+        
+        // Thread 3: Tracking & Classification (serial, waits for detections)
+        this->workerThreads_.emplace_back(&dynamicDetector::trackingClassificationThreadWorker, this);
+        
+        // Thread 4: Visualization (async publish, can run in parallel)
+        this->workerThreads_.emplace_back(&dynamicDetector::visualizationThreadWorker, this);
         
 		// get dynamic obstacle service
 		this->getDynamicObstacleServer_ = this->nh_.advertiseService("onboard_detector/get_dynamic_obstacles", &dynamicDetector::getDynamicObstacles, this);
@@ -920,13 +932,16 @@ namespace onboardDetector{
         std::vector<std::pair<double, onboardDetector::box3D>> obstaclesWithDistances;
 
         // Go through all obstacles and calculate distances
-        for (const onboardDetector::box3D& bbox : this->dynamicBBoxes_) {
-            Eigen::Vector3d obsPos(bbox.x, bbox.y, bbox.z);
-            Eigen::Vector3d diff = currPos - obsPos;
-            diff(2) = 0.;
-            double distance = diff.norm();
-            if (distance <= req.range) {
-                obstaclesWithDistances.push_back(std::make_pair(distance, bbox));
+        {
+            std::lock_guard<std::mutex> lock(this->dynamicBBoxesMutex_);
+            for (const onboardDetector::box3D& bbox : this->dynamicBBoxes_) {
+                Eigen::Vector3d obsPos(bbox.x, bbox.y, bbox.z);
+                Eigen::Vector3d diff = currPos - obsPos;
+                diff(2) = 0.;
+                double distance = diff.norm();
+                if (distance <= req.range) {
+                    obstaclesWithDistances.push_back(std::make_pair(distance, bbox));
+                }
             }
         }
 
@@ -970,7 +985,10 @@ namespace onboardDetector{
         if (img->encoding == sensor_msgs::image_encodings::TYPE_32FC1){
             (imgPtr->image).convertTo(imgPtr->image, CV_16UC1, this->depthScale_);
         }
-        imgPtr->image.copyTo(this->depthImage_);
+        {
+            std::lock_guard<std::mutex> lock(this->depthImageMutex_);
+            imgPtr->image.copyTo(this->depthImage_);
+        }
         // ROS_INFO("Finsh Depth Image Transfer");
 
         // store current position and orientation (camera)
@@ -1017,7 +1035,10 @@ namespace onboardDetector{
         if (img->encoding == sensor_msgs::image_encodings::TYPE_32FC1){
             (imgPtr->image).convertTo(imgPtr->image, CV_16UC1, this->depthScale_);
         }
-        imgPtr->image.copyTo(this->depthImage_);
+        {
+            std::lock_guard<std::mutex> lock(this->depthImageMutex_);
+            imgPtr->image.copyTo(this->depthImage_);
+        }
 
         // store current position and orientation (camera)
         Eigen::Matrix4d camPoseDepthMatrix, camPoseColorMatrix, lidarPoseMatrix;
@@ -1146,11 +1167,15 @@ namespace onboardDetector{
     void dynamicDetector::colorImgCB(const sensor_msgs::ImageConstPtr& img){
         // ROS_INFO("Into ColorImgCB");
         cv_bridge::CvImagePtr imgPtr = cv_bridge::toCvCopy(img, img->encoding);
-        imgPtr->image.copyTo(this->detectedColorImage_);
+        {
+            std::lock_guard<std::mutex> lock(this->colorImgMutex_);
+            imgPtr->image.copyTo(this->detectedColorImage_);
+        }
         // ROS_INFO("Finish ColorImgCB");
     }
 
     void dynamicDetector::yoloDetectionCB(const vision_msgs::Detection2DArrayConstPtr& detections){
+        std::lock_guard<std::mutex> lock(this->yoloDetMutex_);
         this->yoloDetectionResults_ = *detections;
     }
 
@@ -1254,23 +1279,26 @@ namespace onboardDetector{
             
             std::vector<Eigen::Vector3d> dynamicEigenPoints;
             
-            for (const auto& box : this->dynamicBBoxes_) {
-                if (!box.is_dynamic)
-                    continue;
-                
-                double x_min = box.x - box.x_width / 2.0;
-                double x_max = box.x + box.x_width / 2.0;
-                double y_min = box.y - box.y_width / 2.0;
-                double y_max = box.y + box.y_width / 2.0;
-                double z_min = box.z - box.z_width / 2.0;
-                double z_max = box.z + box.z_width / 2.0;
-                
-                for (const auto& point : globalCloud->points) {
-                    if (point.x >= x_min && point.x <= x_max &&
-                        point.y >= y_min && point.y <= y_max &&
-                        point.z >= z_min && point.z <= z_max)
-                    {
-                        dynamicEigenPoints.push_back(Eigen::Vector3d(point.x, point.y, point.z));
+            {
+                std::lock_guard<std::mutex> lock(this->dynamicBBoxesMutex_);
+                for (const auto& box : this->dynamicBBoxes_) {
+                    if (!box.is_dynamic)
+                        continue;
+                    
+                    double x_min = box.x - box.x_width / 2.0;
+                    double x_max = box.x + box.x_width / 2.0;
+                    double y_min = box.y - box.y_width / 2.0;
+                    double y_max = box.y + box.y_width / 2.0;
+                    double z_min = box.z - box.z_width / 2.0;
+                    double z_max = box.z + box.z_width / 2.0;
+                    
+                    for (const auto& point : globalCloud->points) {
+                        if (point.x >= x_min && point.x <= x_max &&
+                            point.y >= y_min && point.y <= y_max &&
+                            point.z >= z_min && point.z <= z_max)
+                        {
+                            dynamicEigenPoints.push_back(Eigen::Vector3d(point.x, point.y, point.z));
+                        }
                     }
                 }
             }
@@ -1422,7 +1450,7 @@ namespace onboardDetector{
             boxFilter.setMin(Eigen::Vector4f(-this->localLidarRange_.x(), -this->localLidarRange_.y(), -100.0, 1.0)); // Use a reasonable large Z range
             boxFilter.setMax(Eigen::Vector4f( this->localLidarRange_.x(),  this->localLidarRange_.y(),  100.0, 1.0));
             boxFilter.setInputCloud(tempCloud);
-            boxFilter.filter(*filteredCloud);
+            boxFilter.filter(*filteredCloud); 
     
             // 3. Conditional Gaussian probability downsampling
             pcl::PointCloud<pcl::PointXYZ>::Ptr preTransformCloud(new pcl::PointCloud<pcl::PointXYZ>());
@@ -1602,12 +1630,20 @@ namespace onboardDetector{
         // Identification thread
         std::vector<onboardDetector::box3D> dynamicBBoxesTemp;
 
-        // Iterate through all pointcloud/bounding boxes history (note that yolo's pointclouds are dummy pointcloud (empty))
+        ROS_INFO("[DEBUG] ClassificationCB called, pcHist_ size: %zu, boxHist_ size: %zu", 
+                 this->pcHist_.size(), this->boxHist_.size());
+
+        // Iterate through all pointcloud/bounding boxes history with lock protection
+        std::lock_guard<std::mutex> lock(this->boxHistMutex_);
+        
         // NOTE: There are 3 cases which we don't need to perform dynamic obstacle identification.
         for (size_t i=0; i<this->pcHist_.size() ; ++i){
+            ROS_INFO("[DEBUG] Processing obstacle %zu: boxHist_[%zu].size()=%zu, pcHist_[%zu].size()=%zu",
+                     i, i, this->boxHist_[i].size(), i, this->pcHist_[i].size());
             // ===================================================================================
             // CASE I: yolo recognized as dynamic dynamic obstacle
             if (this->boxHist_[i][0].is_human){
+                ROS_INFO("[DEBUG] Obstacle %zu: CASE I detected (human)", i);
                 dynamicBBoxesTemp.push_back(this->boxHist_[i][0]);
                 continue;
             }
@@ -1638,6 +1674,7 @@ namespace onboardDetector{
             }
 
             if (dynaFrames >= this->forceDynaFrames_){
+                ROS_INFO("[DEBUG] Obstacle %zu: CASE III detected (force dynamic, dynaFrames=%d)", i, dynaFrames);
                 this->boxHist_[i][0].is_dynamic = true;
                 dynamicBBoxesTemp.push_back(this->boxHist_[i][0]);
                 continue;
@@ -1690,7 +1727,11 @@ namespace onboardDetector{
             // voting and velocity threshold
             // 1. point cloud voting ratio.
             // 2. velocity (from kalman filter) 
+            ROS_INFO("[DEBUG] Obstacle %zu: voteRatio=%.3f (thresh=%.3f), velNorm=%.3f (thresh=%.3f)",
+                     i, voteRatio, this->dynaVoteThresh_, velNorm, this->dynaVelThresh_);
+            
             if (voteRatio>=this->dynaVoteThresh_ && velNorm>=this->dynaVelThresh_){
+                ROS_INFO("[DEBUG] Obstacle %zu: Passed threshold check, checking consistency", i);
                 this->boxHist_[i][0].is_dynamic_candidate = true;
                 // dynamic-consistency check
                 int dynaConsistCount = 0;
@@ -1701,11 +1742,19 @@ namespace onboardDetector{
                         }
                     }
                 }            
+                ROS_INFO("[DEBUG] Obstacle %zu: dynaConsistCount=%d (required=%d)", 
+                         i, dynaConsistCount, this->dynamicConsistThresh_);
+                
                 if (dynaConsistCount == this->dynamicConsistThresh_){
+                    ROS_INFO("[DEBUG] Obstacle %zu: CLASSIFIED AS DYNAMIC!", i);
                     // set as dynamic and push into history
                     this->boxHist_[i][0].is_dynamic = true;
                     dynamicBBoxesTemp.push_back(this->boxHist_[i][0]);    
+                } else {
+                    ROS_INFO("[DEBUG] Obstacle %zu: Not consistent enough", i);
                 }
+            } else {
+                ROS_INFO("[DEBUG] Obstacle %zu: Failed threshold check", i);
             }
         }
 
@@ -1731,7 +1780,13 @@ namespace onboardDetector{
             }
         }
 
-        this->dynamicBBoxes_ = dynamicBBoxesTemp;
+        {
+            std::lock_guard<std::mutex> lock(this->dynamicBBoxesMutex_);
+            this->dynamicBBoxes_ = dynamicBBoxesTemp;
+        }
+        
+        ROS_INFO("[DEBUG] ClassificationCB finished: %zu dynamic obstacles detected", dynamicBBoxesTemp.size());
+        
         ros::Time end = ros::Time::now();
         double classTime  = (end - start).toSec();
         this->classificationTime_ = (this->classificationTime_ * this->classificationCount_ + classTime) / (this->classificationCount_ + 1);
@@ -1751,12 +1806,22 @@ namespace onboardDetector{
         this->publish3dBox(this->filteredBBoxesBeforeYolo_, this->filteredBBoxesBeforeYoloPub_, 0, 1, 0.5);
         this->publish3dBox(this->filteredBBoxes_, this->filteredBBoxesPub_, 0, 1, 1);
         this->publish3dBox(this->trackedBBoxes_, this->trackedBBoxesPub_, 1, 1, 0);
-        this->publish3dBox(this->dynamicBBoxes_, this->dynamicBBoxesPub_, 0, 0, 1);
+        
+        // Read dynamicBBoxes_ with lock protection
+        std::vector<onboardDetector::box3D> dynamicBBoxesCopy;
+        {
+            std::lock_guard<std::mutex> lock(this->dynamicBBoxesMutex_);
+            dynamicBBoxesCopy = this->dynamicBBoxes_;
+        }
+        this->publish3dBox(dynamicBBoxesCopy, this->dynamicBBoxesPub_, 0, 0, 1);
 
         this->publishLidarClusters(); // colored clusters
         this->publishFilteredPoints();
         std::vector<Eigen::Vector3d> dynamicPoints;
-        this->getDynamicPc(dynamicPoints);
+        {
+            std::lock_guard<std::mutex> lock(this->dynamicBBoxesMutex_);
+            this->getDynamicPc(dynamicPoints);
+        }
         this->publishPoints(dynamicPoints, this->dynamicPointsPub_);
         this->publishPoints(this->filteredDepthPoints_, this->filteredDepthPointsPub_);
 
@@ -1802,34 +1867,39 @@ namespace onboardDetector{
         }
         else{
             json_file << "[\n";
-            for (size_t i = 0; i < dynamicBBoxes_.size(); ++i)
+            size_t dynamicBBoxesSize = 0;
             {
-                const box3D &box = dynamicBBoxes_[i];
-                json_file << "  {\n";
-                json_file << "    \"obj_id\": \"" << i << "\",\n";
-                json_file << "    \"obj_type\": \"Pedestrian\",\n";
-                json_file << "    \"psr\": {\n";
-                json_file << "      \"position\": {\n";
-                json_file << "        \"x\": " << box.x << ",\n";
-                json_file << "        \"y\": " << box.y << ",\n";
-                json_file << "        \"z\": " << box.z << "\n";
-                json_file << "      },\n";
-                json_file << "      \"rotation\": {\n";
-                json_file << "        \"x\": 0,\n";
-                json_file << "        \"y\": 0,\n";
-                json_file << "        \"z\": 0\n";
-                json_file << "      },\n";
-                json_file << "      \"scale\": {\n";
-                json_file << "        \"x\": " << box.x_width << ",\n";
-                json_file << "        \"y\": " << box.y_width << ",\n";
-                json_file << "        \"z\": " << box.z_width + box.z << "\n";
-                json_file << "      }\n";
-                json_file << "    }\n";
-                json_file << "  }";
-                if (i < dynamicBBoxes_.size() - 1)
-                    json_file << ",\n";
-                else
-                    json_file << "\n";
+                std::lock_guard<std::mutex> lock(this->dynamicBBoxesMutex_);
+                dynamicBBoxesSize = this->dynamicBBoxes_.size();
+                for (size_t i = 0; i < dynamicBBoxesSize; ++i)
+                {
+                    const box3D &box = this->dynamicBBoxes_[i];
+                    json_file << "  {\n";
+                    json_file << "    \"obj_id\": \"" << i << "\",\n";
+                    json_file << "    \"obj_type\": \"Pedestrian\",\n";
+                    json_file << "    \"psr\": {\n";
+                    json_file << "      \"position\": {\n";
+                    json_file << "        \"x\": " << box.x << ",\n";
+                    json_file << "        \"y\": " << box.y << ",\n";
+                    json_file << "        \"z\": " << box.z << "\n";
+                    json_file << "      },\n";
+                    json_file << "      \"rotation\": {\n";
+                    json_file << "        \"x\": 0,\n";
+                    json_file << "        \"y\": 0,\n";
+                    json_file << "        \"z\": 0\n";
+                    json_file << "      },\n";
+                    json_file << "      \"scale\": {\n";
+                    json_file << "        \"x\": " << box.x_width << ",\n";
+                    json_file << "        \"y\": " << box.y_width << ",\n";
+                    json_file << "        \"z\": " << box.z_width + box.z << "\n";
+                    json_file << "      }\n";
+                    json_file << "    }\n";
+                    json_file << "  }";
+                    if (i < dynamicBBoxesSize - 1)
+                        json_file << ",\n";
+                    else
+                        json_file << "\n";
+                }
             }
             json_file << "]\n";
             json_file.close();
@@ -1928,8 +1998,11 @@ namespace onboardDetector{
                 lidarBBoxesFiltered.push_back(lidarBBox);
                 lidarClustersFiltered.push_back(lidarClustersRaw[i]);            
             }
-            this->lidarBBoxes_ = lidarBBoxesFiltered;
-            this->lidarClusters_ = lidarClustersFiltered;
+            {
+                std::lock_guard<std::mutex> lock(this->lidarBBoxesMutex_);
+                this->lidarBBoxes_ = lidarBBoxesFiltered;
+                this->lidarClusters_ = lidarClustersFiltered;
+            }
         }
     }
 
@@ -1993,12 +2066,20 @@ namespace onboardDetector{
         this->visualBBoxes_ = visualBBoxesTemp; // for visualization
 
         // STEP 2: Get lidar bboxes and its corresponding clusters and features
-        // lidar bbox filter
-        for (size_t i = 0; i < this->lidarBBoxes_.size(); ++i) {
-            onboardDetector::box3D lidarBBox = this->lidarBBoxes_[i];
+        // lidar bbox filter - need to lock lidarBBoxes_ access
+        std::vector<onboardDetector::box3D> lidarBBoxesCopy;
+        std::vector<onboardDetector::Cluster> lidarClustersCopy;
+        {
+            std::lock_guard<std::mutex> lock(this->lidarBBoxesMutex_);
+            lidarBBoxesCopy = this->lidarBBoxes_;
+            lidarClustersCopy = this->lidarClusters_;
+        }
+        
+        for (size_t i = 0; i < lidarBBoxesCopy.size(); ++i) {
+            onboardDetector::box3D lidarBBox = lidarBBoxesCopy[i];
             
             // get corresponding point cloud cluster
-            onboardDetector::Cluster cluster = this->lidarClusters_[i];
+            onboardDetector::Cluster cluster = lidarClustersCopy[i];
 
             std::vector<Eigen::Vector3d> pcCluster;
             for (const pcl::PointXYZ& point : cluster.points->points) {
@@ -3597,4 +3678,118 @@ void onboardDetector::dynamicDetector::publishLidarPose(){
     
     // Publish the lidar pose
     this->lidarPosePub_.publish(lidarPoseMsg);
+}
+
+// ====================================================================================
+// Multi-threaded worker functions
+// ====================================================================================
+
+void onboardDetector::dynamicDetector::lidarDetectionThreadWorker(){
+    ros::Rate rate(1.0 / this->dt_); // Run at dt_ rate
+    
+    while (this->running_ && ros::ok()) {
+        ros::Time start = ros::Time::now();
+        
+        // Lock and perform lidar detection
+        {
+            std::lock_guard<std::mutex> lock(this->lidarCloudMutex_);
+            if (this->lidarCloud_ != NULL) {
+                this->lidarDetect();
+            }
+        }
+        
+        ros::Time end = ros::Time::now();
+        double currentDetectionTime = (end - start).toSec();
+        this->lidarDetectionTime_ = (this->lidarDetectionTime_ * this->lidarDetectCount_ + currentDetectionTime) / (this->lidarDetectCount_ + 1);
+        this->lidarDetectCount_++;
+        
+        rate.sleep();
+    }
+}
+
+void onboardDetector::dynamicDetector::visionDetectionThreadWorker(){
+    ros::Rate rate(1.0 / this->dt_); // Run at dt_ rate
+    
+    while (this->running_ && ros::ok()) {
+        ros::Time start = ros::Time::now();
+        
+        // Parallel execution: dbscan and uv detection
+        std::future<void> dbscanFuture = std::async(std::launch::async, [this]() {
+            std::lock_guard<std::mutex> lock(this->depthImageMutex_);
+            this->dbscanDetect();
+        });
+        
+        std::future<void> uvFuture = std::async(std::launch::async, [this]() {
+            std::lock_guard<std::mutex> lock(this->depthImageMutex_);
+            this->uvDetect();
+        });
+        
+        // Wait for both to complete
+        dbscanFuture.wait();
+        uvFuture.wait();
+        
+        // Filter and combine results (requires lidar results too)
+        // filterLVBBoxes writes to filteredBBoxes_, so lock is needed
+        {
+            std::lock_guard<std::mutex> lock(this->filteredBBoxesMutex_);
+            this->filterLVBBoxes();
+            this->newDetectFlag_ = true;
+        }
+        
+        ros::Time end = ros::Time::now();
+        double currentDetectionTime = (end - start).toSec();
+        this->visualDetectionTime_ = (this->visualDetectionTime_ * this->visualDetectCount_ + currentDetectionTime) / (this->visualDetectCount_ + 1);
+        this->visualDetectCount_++;
+        
+        rate.sleep();
+    }
+}
+
+void onboardDetector::dynamicDetector::trackingClassificationThreadWorker(){
+    ros::Rate rate(1.0 / this->dt_); // Run at dt_ rate
+    
+    while (this->running_ && ros::ok()) {
+        ros::Time start = ros::Time::now();
+        
+        // Perform tracking with proper locking
+        std::vector<int> bestMatch;
+        {
+            std::lock_guard<std::mutex> lockFiltered(this->filteredBBoxesMutex_);
+            std::lock_guard<std::mutex> lockBoxHist(this->boxHistMutex_);
+            
+            this->boxAssociation(bestMatch);
+            
+            if (bestMatch.size()) {
+                this->kalmanFilterAndUpdateHist(bestMatch);
+            } else {
+                // Only clear history if boxAssociation was actually called (not skipped)
+                if (!this->boxHist_.empty()) {
+                    this->boxHist_.clear();
+                    this->pcHist_.clear();
+                    this->pcCenterHist_.clear();
+                }
+            }
+            
+            ros::Time end = ros::Time::now();
+            double currentTrackingTime = (end - start).toSec();
+            this->trackingTime_ = (this->trackingTime_ * this->trackingCount_ + currentTrackingTime) / (this->trackingCount_ + 1);
+            this->trackingCount_++;
+        } // release mutex locks before calling classificationCB
+        
+        // Classification (depends on tracking history) - classificationCB will acquire its own lock
+        start = ros::Time::now();
+        this->classificationCB(ros::TimerEvent());
+        
+        rate.sleep();
+    }
+}
+
+void onboardDetector::dynamicDetector::visualizationThreadWorker(){
+    ros::Rate rate(1.0 / this->dt_); // Run at dt_ rate
+    
+    while (this->running_ && ros::ok()) {
+        // Visualization can run in parallel, read-only access
+        this->visCB(ros::TimerEvent());
+        rate.sleep();
+    }
 }
