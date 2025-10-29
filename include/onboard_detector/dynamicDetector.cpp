@@ -1630,20 +1630,20 @@ namespace onboardDetector{
         // Identification thread
         std::vector<onboardDetector::box3D> dynamicBBoxesTemp;
 
-        ROS_INFO("[DEBUG] ClassificationCB called, pcHist_ size: %zu, boxHist_ size: %zu", 
-                 this->pcHist_.size(), this->boxHist_.size());
+        // ROS_INFO("[DEBUG] ClassificationCB called, pcHist_ size: %zu, boxHist_ size: %zu", 
+        //          this->pcHist_.size(), this->boxHist_.size());
 
         // Iterate through all pointcloud/bounding boxes history with lock protection
         std::lock_guard<std::mutex> lock(this->boxHistMutex_);
         
         // NOTE: There are 3 cases which we don't need to perform dynamic obstacle identification.
         for (size_t i=0; i<this->pcHist_.size() ; ++i){
-            ROS_INFO("[DEBUG] Processing obstacle %zu: boxHist_[%zu].size()=%zu, pcHist_[%zu].size()=%zu",
-                     i, i, this->boxHist_[i].size(), i, this->pcHist_[i].size());
+            // ROS_INFO("[DEBUG] Processing obstacle %zu: boxHist_[%zu].size()=%zu, pcHist_[%zu].size()=%zu",
+            //          i, i, this->boxHist_[i].size(), i, this->pcHist_[i].size());
             // ===================================================================================
             // CASE I: yolo recognized as dynamic dynamic obstacle
             if (this->boxHist_[i][0].is_human){
-                ROS_INFO("[DEBUG] Obstacle %zu: CASE I detected (human)", i);
+                // ROS_INFO("[DEBUG] Obstacle %zu: CASE I detected (human)", i);
                 dynamicBBoxesTemp.push_back(this->boxHist_[i][0]);
                 continue;
             }
@@ -1674,7 +1674,7 @@ namespace onboardDetector{
             }
 
             if (dynaFrames >= this->forceDynaFrames_){
-                ROS_INFO("[DEBUG] Obstacle %zu: CASE III detected (force dynamic, dynaFrames=%d)", i, dynaFrames);
+                // ROS_INFO("[DEBUG] Obstacle %zu: CASE III detected (force dynamic, dynaFrames=%d)", i, dynaFrames);
                 this->boxHist_[i][0].is_dynamic = true;
                 dynamicBBoxesTemp.push_back(this->boxHist_[i][0]);
                 continue;
@@ -1727,11 +1727,11 @@ namespace onboardDetector{
             // voting and velocity threshold
             // 1. point cloud voting ratio.
             // 2. velocity (from kalman filter) 
-            ROS_INFO("[DEBUG] Obstacle %zu: voteRatio=%.3f (thresh=%.3f), velNorm=%.3f (thresh=%.3f)",
-                     i, voteRatio, this->dynaVoteThresh_, velNorm, this->dynaVelThresh_);
+            // ROS_INFO("[DEBUG] Obstacle %zu: voteRatio=%.3f (thresh=%.3f), velNorm=%.3f (thresh=%.3f)",
+            //          i, voteRatio, this->dynaVoteThresh_, velNorm, this->dynaVelThresh_);
             
             if (voteRatio>=this->dynaVoteThresh_ && velNorm>=this->dynaVelThresh_){
-                ROS_INFO("[DEBUG] Obstacle %zu: Passed threshold check, checking consistency", i);
+                // ROS_INFO("[DEBUG] Obstacle %zu: Passed threshold check, checking consistency", i);
                 this->boxHist_[i][0].is_dynamic_candidate = true;
                 // dynamic-consistency check
                 int dynaConsistCount = 0;
@@ -1742,19 +1742,19 @@ namespace onboardDetector{
                         }
                     }
                 }            
-                ROS_INFO("[DEBUG] Obstacle %zu: dynaConsistCount=%d (required=%d)", 
-                         i, dynaConsistCount, this->dynamicConsistThresh_);
+                // ROS_INFO("[DEBUG] Obstacle %zu: dynaConsistCount=%d (required=%d)", 
+                //          i, dynaConsistCount, this->dynamicConsistThresh_);
                 
                 if (dynaConsistCount == this->dynamicConsistThresh_){
-                    ROS_INFO("[DEBUG] Obstacle %zu: CLASSIFIED AS DYNAMIC!", i);
+                    // ROS_INFO("[DEBUG] Obstacle %zu: CLASSIFIED AS DYNAMIC!", i);
                     // set as dynamic and push into history
                     this->boxHist_[i][0].is_dynamic = true;
                     dynamicBBoxesTemp.push_back(this->boxHist_[i][0]);    
                 } else {
-                    ROS_INFO("[DEBUG] Obstacle %zu: Not consistent enough", i);
+                    // ROS_INFO("[DEBUG] Obstacle %zu: Not consistent enough", i);
                 }
             } else {
-                ROS_INFO("[DEBUG] Obstacle %zu: Failed threshold check", i);
+                // ROS_INFO("[DEBUG] Obstacle %zu: Failed threshold check", i);
             }
         }
 
@@ -1785,7 +1785,7 @@ namespace onboardDetector{
             this->dynamicBBoxes_ = dynamicBBoxesTemp;
         }
         
-        ROS_INFO("[DEBUG] ClassificationCB finished: %zu dynamic obstacles detected", dynamicBBoxesTemp.size());
+        // ROS_INFO("[DEBUG] ClassificationCB finished: %zu dynamic obstacles detected", dynamicBBoxesTemp.size());
         
         ros::Time end = ros::Time::now();
         double classTime  = (end - start).toSec();
