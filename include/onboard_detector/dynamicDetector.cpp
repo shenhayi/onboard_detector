@@ -698,13 +698,22 @@ namespace onboardDetector{
             ROS_ERROR("history length is too short to perform force-dynamic");
         }
 
-        // constrain target object size
+        // constrain target object size (for classification stage)
         if (not this->nh_.getParam(this->ns_ + "/target_constrain_size", this->constrainSize_)){
             this->constrainSize_ = false;
             std::cout << this->hint_ << ": No target object constrain size param found. Use default: false." << std::endl;
         }
         else{
             std::cout << this->hint_ << ": Target object constrain is set to: " << this->constrainSize_ << std::endl;
+        }
+        
+        // lidar pre-filter by size (for detection stage, extreme scenarios only)
+        if (not this->nh_.getParam(this->ns_ + "/pre_filter_size", this->lidarPrefilterBySize_)){
+            this->lidarPrefilterBySize_ = false;
+            std::cout << this->hint_ << ": No pre_filter_size param found. Use default: false." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Pre-filter by size is set to: " << this->lidarPrefilterBySize_ << std::endl;
         }  
 
         // target object  sizes
@@ -1573,6 +1582,14 @@ namespace onboardDetector{
         }
     }
 
+    // ====================================================================================
+    // DEPRECATED: Old timer-based callbacks - replaced by multi-threaded workers
+    // These callbacks are no longer used. The multi-threading implementation in
+    // lidarDetectionThreadWorker, visionDetectionThreadWorker, and trackingClassificationThreadWorker
+    // has replaced these callbacks for better performance and parallel execution.
+    // ====================================================================================
+    
+    /*
     void dynamicDetector::lidarDetectionCB(const ros::TimerEvent&){
         ros::Time start = ros::Time::now();
         this->lidarDetect();
@@ -1607,7 +1624,7 @@ namespace onboardDetector{
         // data association thread
         std::vector<int> bestMatch; // for each current detection, which index of previous obstacle match
         this->boxAssociation(bestMatch);
-        // kalman filter tracking
+        // kalman filter trackingtrackingClassificationThreadWorker
         if (bestMatch.size()){
             this->kalmanFilterAndUpdateHist(bestMatch);
         }
@@ -1624,6 +1641,7 @@ namespace onboardDetector{
         
         // ROS_INFO("Average tracking time: %.8f sec", this->trackingTime_);
     }
+    */
 
     void dynamicDetector::classificationCB(const ros::TimerEvent&){
         ros::Time start = ros::Time::now();
@@ -1991,10 +2009,29 @@ namespace onboardDetector{
             std::vector<onboardDetector::box3D> lidarBBoxesFiltered;
             for (int i=0; i<int(lidarBBoxesRaw.size()); ++i){
                 onboardDetector::box3D lidarBBox = lidarBBoxesRaw[i];
+                
                 // filter out lidar bounding boxes that are too large
                 if(lidarBBox.x_width > this->maxObjectSize_(0) || lidarBBox.y_width > this->maxObjectSize_(1) || lidarBBox.z_width > this->maxObjectSize_(2)){
                     continue;
                 }
+                
+                // Optional: pre-filter by target size for extreme performance scenarios
+                if (this->lidarPrefilterBySize_){
+                    bool findMatch = false;
+                    for (Eigen::Vector3d targetSize : this->targetObjectSize_){
+                        double xdiff = std::abs(lidarBBox.x_width - targetSize(0));
+                        double ydiff = std::abs(lidarBBox.y_width - targetSize(1));
+                        double zdiff = std::abs(lidarBBox.z_width - targetSize(2)); 
+                        if (xdiff < 0.5 && ydiff < 0.5 && zdiff < 0.5){
+                            findMatch = true;
+                            break;
+                        }
+                    }
+                    if (!findMatch){
+                        continue;  // Skip boxes that don't match target size
+                    }
+                }
+                
                 lidarBBoxesFiltered.push_back(lidarBBox);
                 lidarClustersFiltered.push_back(lidarClustersRaw[i]);            
             }
@@ -2752,10 +2789,10 @@ namespace onboardDetector{
             // start association only if a new detection is available
             if (this->newDetectFlag_){
                 this->boxAssociationHelper(bestMatch);
+                this->newDetectFlag_ = false; // the most recent detection has been associated
             }
+            // If no new detection, do nothing and keep the flag unchanged
         }
-
-        this->newDetectFlag_ = false; // the most recent detection has been associated
     }
 
     void dynamicDetector::boxAssociationHelper(std::vector<int>& bestMatch){

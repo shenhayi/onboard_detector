@@ -196,6 +196,7 @@ namespace onboardDetector{
 
         // Constrain size
         bool constrainSize_;
+        bool lidarPrefilterBySize_;  // Pre-filter lidar detection by target size for extreme scenarios
         std::vector<Eigen::Vector3d> targetObjectSize_; 
         Eigen::Vector3d maxObjectSize_; 
 
