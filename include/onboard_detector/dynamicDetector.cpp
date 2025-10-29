@@ -1462,7 +1462,7 @@ namespace onboardDetector{
                 return;
             }
             // add a timer to count the cost time
-            ros::Time start = ros::Time::now();
+            // ros::Time start = ros::Time::now();
     
             this->latest_cloud_ = cloudMsg;
     
@@ -1588,9 +1588,9 @@ namespace onboardDetector{
             this->lidarCloud_ = downsampledCloud;
             ROS_INFO("Downsampled Size: %zu", downsampledCloud->size()); // Use %zu for size_t
 
-            ros::Time end = ros::Time::now();
-            double currentDetectionTime = (end - start).toSec();
-            ROS_INFO("Downsampled Time: %.8f sec", currentDetectionTime);
+            // ros::Time end = ros::Time::now();
+            // double currentDetectionTime = (end - start).toSec();
+            // ROS_INFO("Downsampled Time: %.8f sec", currentDetectionTime);
     
             // ... (Publishing logic) ...
     
@@ -1830,25 +1830,35 @@ namespace onboardDetector{
     }
 
     void dynamicDetector::visCB(const ros::TimerEvent&){
-        // ROS_INFO("Into VisCB");
+        ROS_INFO("Into VisCB");
         
         // Publish system timestamps for frequency monitoring
         std_msgs::Header systemTimeMsg;
         systemTimeMsg.stamp = ros::Time::now();
         systemTimeMsg.frame_id = "system_timestamp";
         this->systemTimestampPub_.publish(systemTimeMsg);
+        // ROS_INFO("System Timestamp published");
         
-        this->publishUVImages();
+        // this->publishUVImages();
+        // ROS_INFO("UV Img published");
+
         this->publishColorImages();
+        // ROS_INFO("Color Img published");
         
         this->publish3dBox(this->uvBBoxes_, this->uvBBoxesPub_, 0, 1, 0);
+        // ROS_INFO("UVbbox published");
         this->publish3dBox(this->dbBBoxes_, this->dbBBoxesPub_, 1, 0, 0);
+        // ROS_INFO("DBBBox published");
         this->publish3dBox(this->visualBBoxes_, this->visualBBoxesPub_, 0.3, 0.8, 1.0);
+        // ROS_INFO("Viusal BBox published");
         this->publish3dBox(this->lidarBBoxes_, this->lidarBBoxesPub_, 0.5, 0.5, 0.5); // raw lidar cluster bounding boxes
+        // ROS_INFO("Lidar BBox published");
         this->publish3dBox(this->filteredBBoxesBeforeYolo_, this->filteredBBoxesBeforeYoloPub_, 0, 1, 0.5);
+        // ROS_INFO("Filtered BBox before YOLO published");
         this->publish3dBox(this->filteredBBoxes_, this->filteredBBoxesPub_, 0, 1, 1);
+        // ROS_INFO("Filtered BBox published");
         this->publish3dBox(this->trackedBBoxes_, this->trackedBBoxesPub_, 1, 1, 0);
-        
+        // ROS_INFO("Tracked BBox published");
         // Read dynamicBBoxes_ with lock protection
         std::vector<onboardDetector::box3D> dynamicBBoxesCopy;
         {
@@ -1856,22 +1866,29 @@ namespace onboardDetector{
             dynamicBBoxesCopy = this->dynamicBBoxes_;
         }
         this->publish3dBox(dynamicBBoxesCopy, this->dynamicBBoxesPub_, 0, 0, 1);
-
+        // ROS_INFO("Dynamic BBox published");
         this->publishLidarClusters(); // colored clusters
+        // ROS_INFO("Lidar Clusters published");
         this->publishFilteredPoints();
+        // ROS_INFO("Filtered Points published");
         std::vector<Eigen::Vector3d> dynamicPoints;
         {
             std::lock_guard<std::mutex> lock(this->dynamicBBoxesMutex_);
             this->getDynamicPc(dynamicPoints);
         }
+        // ROS_INFO("Dynamic Points published");
         this->publishPoints(dynamicPoints, this->dynamicPointsPub_);
+        // ROS_INFO("Dynamic Points published");
         this->publishPoints(this->filteredDepthPoints_, this->filteredDepthPointsPub_);
-
+        // ROS_INFO("Filtered Depth Points published");
         this->publishHistoryTraj();
+        // ROS_INFO("History Traj published");
         this->publishVelVis();
+        // ROS_INFO("Vel Vis published");
         this->publishCameraPose();
-        this->publishLidarPose();
-        // ROS_INFO("Finish VisCB");
+        // ROS_INFO("Camera Pose published");
+        // this->publishLidarPose();
+        ROS_INFO("Finish VisCB");
     }
 
     void dynamicDetector::labelCB(const ros::TimerEvent& event)
@@ -3157,12 +3174,46 @@ namespace onboardDetector{
     
     void dynamicDetector::publishUVImages(){
         if (this->uvDetector_ != NULL){
-            sensor_msgs::ImagePtr depthBoxMsg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", this->uvDetector_->depth_show).toImageMsg();
-            sensor_msgs::ImagePtr UmapBoxMsg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", this->uvDetector_->U_map_show).toImageMsg();
-            sensor_msgs::ImagePtr birdBoxMsg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", this->uvDetector_->bird_view).toImageMsg();  
-            this->uvDepthMapPub_.publish(depthBoxMsg);
-            this->uDepthMapPub_.publish(UmapBoxMsg); 
-            this->uvBirdViewPub_.publish(birdBoxMsg);
+            // ROS_INFO("Publishing UV Images");
+            sensor_msgs::ImagePtr depthBoxMsg = nullptr;
+            if(!this->uvDetector_->depth_show.empty()){
+                depthBoxMsg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", this->uvDetector_->depth_show).toImageMsg();
+                ROS_INFO("Depth Transformed");
+            }
+            else{
+                ROS_INFO("depth Empty");
+            }
+            sensor_msgs::ImagePtr UmapBoxMsg = nullptr;
+            if(!this->uvDetector_->U_map_show.empty()){
+                UmapBoxMsg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", this->uvDetector_->U_map_show).toImageMsg();
+                ROS_INFO("Umap Transformed");
+            }
+            else {
+                ROS_INFO("Umap empty");            
+            }
+            sensor_msgs::ImagePtr birdBoxMsg = nullptr;
+            // if (!this->uvDetector_->bird_view.empty()){
+            //     ROS_INFO("Start transfer BEV");
+            //     birdBoxMsg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", this->uvDetector_->bird_view).toImageMsg();
+            //     ROS_INFO("End transfer BEV"); 
+            // }
+            // else{
+            //     ROS_INFO("Bird View Empty");
+            // }
+            if(depthBoxMsg!= nullptr){
+                this->uvDepthMapPub_.publish(depthBoxMsg);
+                ROS_INFO("Depth Published");
+            }
+            // ROS_INFO("Depth Published");
+            if(UmapBoxMsg!= nullptr){
+                this->uDepthMapPub_.publish(UmapBoxMsg); 
+                ROS_INFO("Umap Published");
+            }
+            // ROS_INFO("Umap Published");
+            if (birdBoxMsg != nullptr){
+                this->uvBirdViewPub_.publish(birdBoxMsg);
+                // ROS_INFO("Bird View Published");
+            }
         }     
     }
 
@@ -3749,13 +3800,17 @@ void onboardDetector::dynamicDetector::lidarDetectionThreadWorker(){
     ros::Rate rate(1.0 / this->dt_); // Run at dt_ rate
     
     while (this->running_ && ros::ok()) {
+        ROS_INFO("Start LiDAR Detect");
         ros::Time start = ros::Time::now();
         
         // Lock and perform lidar detection
+        ROS_INFO("Into lidarcloudMutex");
         {
             std::lock_guard<std::mutex> lock(this->lidarCloudMutex_);
             if (this->lidarCloud_ != NULL) {
+                ROS_INFO("Into LiDAR DBSCAN");
                 this->lidarDetect();
+                ROS_INFO("Finished LiDAR DBSCAN");
             }
         }
         
@@ -3763,6 +3818,7 @@ void onboardDetector::dynamicDetector::lidarDetectionThreadWorker(){
         double currentDetectionTime = (end - start).toSec();
         this->lidarDetectionTime_ = (this->lidarDetectionTime_ * this->lidarDetectCount_ + currentDetectionTime) / (this->lidarDetectCount_ + 1);
         this->lidarDetectCount_++;
+        ROS_INFO("End LiDAR Detect");
         
         rate.sleep();
     }
@@ -3772,6 +3828,7 @@ void onboardDetector::dynamicDetector::visionDetectionThreadWorker(){
     ros::Rate rate(1.0 / this->dt_); // Run at dt_ rate
     
     while (this->running_ && ros::ok()) {
+        // ROS_INFO("Start Vision Detect");
         ros::Time start = ros::Time::now();
         
         // Parallel execution: dbscan and uv detection
@@ -3801,6 +3858,7 @@ void onboardDetector::dynamicDetector::visionDetectionThreadWorker(){
         double currentDetectionTime = (end - start).toSec();
         this->visualDetectionTime_ = (this->visualDetectionTime_ * this->visualDetectCount_ + currentDetectionTime) / (this->visualDetectCount_ + 1);
         this->visualDetectCount_++;
+        // ROS_INFO("End Vision Detect");
         
         rate.sleep();
     }
@@ -3810,6 +3868,7 @@ void onboardDetector::dynamicDetector::trackingClassificationThreadWorker(){
     ros::Rate rate(1.0 / this->dt_); // Run at dt_ rate
     
     while (this->running_ && ros::ok()) {
+        // ROS_INFO("Start Tracking and Classification");
         ros::Time start = ros::Time::now();
         
         // Perform tracking with proper locking
@@ -3840,6 +3899,7 @@ void onboardDetector::dynamicDetector::trackingClassificationThreadWorker(){
         // Classification (depends on tracking history) - classificationCB will acquire its own lock
         start = ros::Time::now();
         this->classificationCB(ros::TimerEvent());
+        // ROS_INFO("End Tracking and Classification");
         
         rate.sleep();
     }
@@ -3850,7 +3910,9 @@ void onboardDetector::dynamicDetector::visualizationThreadWorker(){
     
     while (this->running_ && ros::ok()) {
         // Visualization can run in parallel, read-only access
+        // ROS_INFO("Statr Vis");
         this->visCB(ros::TimerEvent());
+        // ROS_INFO("End Vis");
         rate.sleep();
     }
 }
