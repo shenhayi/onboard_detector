@@ -751,6 +751,20 @@ namespace onboardDetector{
             std::cout << "]." << std::endl;
         }
 
+        // lidar local range (spatial filter for lidar detection)
+        std::vector<double> lidarLocalRangeTemp;
+        if(not this->nh_.getParam(this->ns_ + "/lidar_local_range", lidarLocalRangeTemp)){
+            this->localLidarRange_ = Eigen::Vector3d (10.0, 10.0, 5.0);
+            std::cout << this->hint_ << ": No lidar local range parameter found. Use default: [10.0, 10.0, 5.0]." << std::endl;
+        }
+        else{
+            this->localLidarRange_(0) = lidarLocalRangeTemp[0];
+            this->localLidarRange_(1) = lidarLocalRangeTemp[1];
+            this->localLidarRange_(2) = lidarLocalRangeTemp[2];
+            std::cout << this->hint_ << ": Lidar local range is set to: [" << lidarLocalRangeTemp[0] << ", " 
+                      << lidarLocalRangeTemp[1] << ", " << lidarLocalRangeTemp[2] << "]." << std::endl;
+        }
+
         // eval or not 
         if (not this->nh_.getParam(this->ns_ + "/eval", this->evalMode_)){
             this->evalMode_ = false;
