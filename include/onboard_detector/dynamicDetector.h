@@ -92,6 +92,7 @@ namespace onboardDetector{
         ros::Publisher depthPosePub_;
         ros::Publisher colorPosePub_;
         ros::Publisher lidarPosePub_;
+        ros::Publisher systemTimestampPub_;  // system timestamp for frequency monitoring
         ros::ServiceServer getDynamicObstacleServer_;
     
         // DETECTOR

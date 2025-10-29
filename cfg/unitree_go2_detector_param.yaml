@@ -75,7 +75,7 @@ dbscan_search_range_epsilon: 0.05 # searching range radius
 # DBSCAN LiDAR param
 lidar_DBSCAN_min_points: 10
 lidar_DBSCAN_epsilon: 0.1
-lidar_local_range: [5.0, 5.0, 5.0] # x, y, z range in meters
+lidar_local_range: [10.0, 10.0, 5.0] # x, y, z range in meters
 downsample_threshold: 3000 # threshold for downsampling
 gaussian_downsample_rate: 10
 use_gaussian_downsampling: true # Enable/disable Gaussian probability downsampling

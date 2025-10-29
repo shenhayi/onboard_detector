@@ -863,6 +863,9 @@ namespace onboardDetector{
 
         // lidar pose pub
         this->lidarPosePub_ = this->nh_.advertise<geometry_msgs::PoseStamped>(this->ns_ + "/lidar_pose", 10);
+        
+        // system timestamp pub for frequency monitoring
+        this->systemTimestampPub_ = this->nh_.advertise<std_msgs::Header>(this->ns_ + "/system_timestamp", 10);
     }   
 
     void dynamicDetector::registerCallback(){
@@ -1828,6 +1831,13 @@ namespace onboardDetector{
 
     void dynamicDetector::visCB(const ros::TimerEvent&){
         // ROS_INFO("Into VisCB");
+        
+        // Publish system timestamps for frequency monitoring
+        std_msgs::Header systemTimeMsg;
+        systemTimeMsg.stamp = ros::Time::now();
+        systemTimeMsg.frame_id = "system_timestamp";
+        this->systemTimestampPub_.publish(systemTimeMsg);
+        
         this->publishUVImages();
         this->publishColorImages();
         
