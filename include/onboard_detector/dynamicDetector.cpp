@@ -694,6 +694,81 @@ namespace onboardDetector{
             std::cout << this->hint_ << ": Threshold for dynamic consistency check is set to: " << this->dynamicConsistThresh_ << std::endl;
         }  
 
+        // FP (False Positive) reduction parameters
+        if (not this->nh_.getParam(this->ns_ + "/enable_fp_reduction", this->enableFPReduction_)){
+            this->enableFPReduction_ = true;
+            std::cout << this->hint_ << ": No FP reduction enable parameter found. Use default: true." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": FP reduction is " << (this->enableFPReduction_ ? "enabled" : "disabled") << std::endl;
+        }
+
+        if (not this->nh_.getParam(this->ns_ + "/fp_check_frame_window", this->fpCheckFrameWindow_)){
+            // Default: approximately 1 second worth of frames (assuming 30 fps, dt_=0.033)
+            this->fpCheckFrameWindow_ = 30;
+            std::cout << this->hint_ << ": No FP check frame window parameter found. Use default: 30 frames." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": FP check frame window is set to: " << this->fpCheckFrameWindow_ << " frames." << std::endl;
+        }
+
+        if (not this->nh_.getParam(this->ns_ + "/fp_iou_threshold", this->fpIOUThreshold_)){
+            this->fpIOUThreshold_ = 0.85;
+            std::cout << this->hint_ << ": No FP IOU threshold parameter found. Use default: 0.85." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": FP IOU threshold is set to: " << this->fpIOUThreshold_ << std::endl;
+        }
+
+        if (not this->nh_.getParam(this->ns_ + "/fp_displacement_ratio", this->fpDisplacementRatio_)){
+            this->fpDisplacementRatio_ = 0.3;
+            std::cout << this->hint_ << ": No FP displacement ratio parameter found. Use default: 0.3." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": FP displacement ratio is set to: " << this->fpDisplacementRatio_ << std::endl;
+        }
+
+        if (not this->nh_.getParam(this->ns_ + "/fp_displacement_min", this->fpDisplacementMin_)){
+            this->fpDisplacementMin_ = 0.2;
+            std::cout << this->hint_ << ": No FP minimum displacement parameter found. Use default: 0.2 meters." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": FP minimum displacement is set to: " << this->fpDisplacementMin_ << " meters." << std::endl;
+        }
+
+        // FN (False Negative) recovery parameters
+        if (not this->nh_.getParam(this->ns_ + "/enable_fn_recovery", this->enableFNRecovery_)){
+            this->enableFNRecovery_ = true;
+            std::cout << this->hint_ << ": No FN recovery enable parameter found. Use default: true." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": FN recovery is " << (this->enableFNRecovery_ ? "enabled" : "disabled") << std::endl;
+        }
+
+        if (not this->nh_.getParam(this->ns_ + "/fn_check_frame_window", this->fnCheckFrameWindow_)){
+            this->fnCheckFrameWindow_ = 5;
+            std::cout << this->hint_ << ": No FN check frame window parameter found. Use default: 5 frames." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": FN check frame window is set to: " << this->fnCheckFrameWindow_ << " frames." << std::endl;
+        }
+
+        if (not this->nh_.getParam(this->ns_ + "/fn_match_distance_threshold", this->fnMatchDistanceThreshold_)){
+            this->fnMatchDistanceThreshold_ = 0.5;
+            std::cout << this->hint_ << ": No FN match distance threshold parameter found. Use default: 0.5 meters." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": FN match distance threshold is set to: " << this->fnMatchDistanceThreshold_ << " meters." << std::endl;
+        }
+
+        if (not this->nh_.getParam(this->ns_ + "/fn_min_match_count", this->fnMinMatchCount_)){
+            this->fnMinMatchCount_ = 2;
+            std::cout << this->hint_ << ": No FN minimum match count parameter found. Use default: 2." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": FN minimum match count is set to: " << this->fnMinMatchCount_ << std::endl;
+        }
+
         if ( this->histSize_ < this->forceDynaCheckRange_+1){
             ROS_ERROR("history length is too short to perform force-dynamic");
         }
@@ -866,6 +941,9 @@ namespace onboardDetector{
         
         // system timestamp pub for frequency monitoring
         this->systemTimestampPub_ = this->nh_.advertise<std_msgs::Header>(this->ns_ + "/system_timestamp", 10);
+        
+        // dynamic obstacle data pub
+        this->dynamicObstacleDataPub_ = this->nh_.advertise<onboard_detector::DynObsData>(this->ns_ + "/dynamic_obstacle_data", 10);
     }   
 
     void dynamicDetector::registerCallback(){
@@ -938,6 +1016,12 @@ namespace onboardDetector{
         
 		// get dynamic obstacle service
 		this->getDynamicObstacleServer_ = this->nh_.advertiseService("onboard_detector/get_dynamic_obstacles", &dynamicDetector::getDynamicObstacles, this);
+        
+        // dynamic obstacle info subscriber
+        this->dynamicObstacleInfoSub_ = this->nh_.subscribe(this->ns_ + "/dynamic_obstacle_info", 10, &dynamicDetector::dynamicObstacleInfoCB, this);
+        
+        // dynamic obstacle pub timer
+        this->dynamicObstaclePubTimer_ = this->nh_.createTimer(ros::Duration(0.033), &dynamicDetector::dynamicObstaclePubCB, this);
 
         if(this->evalMode_){
         // save pointcloud to pcd
@@ -1782,14 +1866,192 @@ namespace onboardDetector{
                 
                 if (dynaConsistCount == this->dynamicConsistThresh_){
                     // ROS_INFO("[DEBUG] Obstacle %zu: CLASSIFIED AS DYNAMIC!", i);
-                    // set as dynamic and push into history
-                    this->boxHist_[i][0].is_dynamic = true;
-                    dynamicBBoxesTemp.push_back(this->boxHist_[i][0]);    
+                    
+                    // FP (False Positive) reduction check
+                    // Two-stage check: IOU check first, then displacement check
+                    bool isFP = false;
+                    if (this->enableFPReduction_){
+                        // Calculate number of frames to check based on frame window
+                        int framesToCheck = std::min(
+                            this->fpCheckFrameWindow_, 
+                            static_cast<int>(this->boxHist_[i].size()) - 1
+                        );
+                        
+                        if (framesToCheck > 0){
+                            // Stage 1: IOU check - fast screening
+                            // Calculate average IOU between current box and historical boxes
+                            double avgIOU = 0.0;
+                            int validIOUCount = 0;
+                            
+                            for (int j = 1; j <= framesToCheck; ++j){
+                                double iou = this->calBoxIOU(this->boxHist_[i][0], this->boxHist_[i][j], false);
+                                if (iou > 0.0){  // Valid IOU (boxes overlap)
+                                    avgIOU += iou;
+                                    validIOUCount++;
+                                }
+                            }
+                            
+                            // If average IOU is very high, consider as static (FP)
+                            if (validIOUCount > 0){
+                                avgIOU /= validIOUCount;
+                                if (avgIOU >= this->fpIOUThreshold_){
+                                    isFP = true;
+                                    // ROS_INFO("[DEBUG] Obstacle %zu: FP detected by IOU! avgIOU=%.3f >= threshold=%.3f", 
+                                    //          i, avgIOU, this->fpIOUThreshold_);
+                                }
+                            }
+                            
+                            // Stage 2: Displacement check - fine-grained verification
+                            // Only perform if IOU check didn't identify as FP
+                            if (!isFP){
+                                // Calculate weighted average position from history
+                                // Use linear weighting: more recent frames have higher weights
+                                Eigen::Vector2d weightedPosSum(0.0, 0.0);
+                                double totalWeight = 0.0;
+                                
+                                for (int j = 0; j <= framesToCheck; ++j){
+                                    // Linear weight: weight = (framesToCheck + 1 - j)
+                                    // More recent frames (smaller j) have higher weights
+                                    double weight = static_cast<double>(framesToCheck + 1 - j);
+                                    weightedPosSum(0) += this->boxHist_[i][j].x * weight;
+                                    weightedPosSum(1) += this->boxHist_[i][j].y * weight;
+                                    totalWeight += weight;
+                                }
+                                
+                                Eigen::Vector2d weightedAvgPos = weightedPosSum / totalWeight;
+                                
+                                // Current position
+                                Eigen::Vector2d currentPos(this->boxHist_[i][0].x, this->boxHist_[i][0].y);
+                                
+                                // Calculate displacement in XY plane
+                                Eigen::Vector2d displacement = currentPos - weightedAvgPos;
+                                double displacementNorm = displacement.norm();
+                                
+                                // Calculate relative threshold based on box size
+                                double boxDiagonal = std::sqrt(
+                                    this->boxHist_[i][0].x_width * this->boxHist_[i][0].x_width + 
+                                    this->boxHist_[i][0].y_width * this->boxHist_[i][0].y_width
+                                );
+                                double relativeThreshold = boxDiagonal * this->fpDisplacementRatio_;
+                                
+                                // Use the maximum of relative and absolute thresholds
+                                double displacementThreshold = std::max(relativeThreshold, this->fpDisplacementMin_);
+                                
+                                // If displacement is too small, consider it as FP (static object)
+                                if (displacementNorm < displacementThreshold){
+                                    isFP = true;
+                                    // ROS_INFO("[DEBUG] Obstacle %zu: FP detected by displacement! displacement=%.3f < threshold=%.3f", 
+                                    //          i, displacementNorm, displacementThreshold);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Only set as dynamic if not identified as FP
+                    if (!isFP){
+                        this->boxHist_[i][0].is_dynamic = true;
+                        dynamicBBoxesTemp.push_back(this->boxHist_[i][0]);
+                    }
+                    // else: skip this box (treat as static, don't add to dynamicBBoxesTemp)
                 } else {
                     // ROS_INFO("[DEBUG] Obstacle %zu: Not consistent enough", i);
                 }
             } else {
                 // ROS_INFO("[DEBUG] Obstacle %zu: Failed threshold check", i);
+            }
+        }
+
+        // FN (False Negative) recovery check
+        // For tracked boxes that didn't pass regular dynamic classification,
+        // check if they can match with historical dynamic boxes
+        if (this->enableFNRecovery_ && !this->dynamicBBoxesHist_.empty()){
+            // Get current tracked boxes that are not yet marked as dynamic
+            std::vector<size_t> nonDynamicTrackedIndices;
+            for (size_t i = 0; i < this->boxHist_.size(); ++i){
+                if (!this->boxHist_[i].empty() && !this->boxHist_[i][0].is_dynamic && !this->boxHist_[i][0].is_human){
+                    nonDynamicTrackedIndices.push_back(i);
+                }
+            }
+
+            // Check each non-dynamic tracked box against historical dynamic boxes
+            for (size_t idx : nonDynamicTrackedIndices){
+                onboardDetector::box3D currentBox = this->boxHist_[idx][0];
+                
+                int matchCount = 0;
+                double totalMatchScore = 0.0;
+                
+                // Check historical dynamic boxes (recent N frames)
+                int historyFramesToCheck = std::min(
+                    this->fnCheckFrameWindow_, 
+                    static_cast<int>(this->dynamicBBoxesHist_.size())
+                );
+                
+                for (int h = 0; h < historyFramesToCheck; ++h){
+                    // h=0 is the most recent historical frame
+                    const std::vector<onboardDetector::box3D>& histDynamicBoxes = this->dynamicBBoxesHist_[h];
+                    
+                    for (const auto& histDynamicBox : histDynamicBoxes){
+                        // Predict historical dynamic box's current position using velocity
+                        // Similar to linearProp() function, but for multiple frames
+                        // Time delta: (h+1) frames ago, so timeDelta = (h+1) * dt_
+                        double timeDelta = (h + 1) * this->dt_;
+                        
+                        // Create predicted box at current time using linear propagation
+                        // Reference: linearProp() uses: x += Vx * dt_ for 1 frame prediction
+                        // Here we predict: x = histX + Vx * timeDelta for multi-frame prediction
+                        onboardDetector::box3D predictedBox = histDynamicBox;
+                        predictedBox.x += histDynamicBox.Vx * timeDelta;
+                        predictedBox.y += histDynamicBox.Vy * timeDelta;
+                        // Keep z, size, and other properties from historical box
+                        
+                        // Calculate center distance (similar to findBestMatch logic)
+                        // Use Euclidean distance in XY plane
+                        double distance = std::sqrt(
+                            std::pow(predictedBox.x - currentBox.x, 2) + 
+                            std::pow(predictedBox.y - currentBox.y, 2)
+                        );
+                        
+                        // Check if within distance threshold (similar to maxMatchRange_ in findBestMatch)
+                        // No IOU requirement since boxes may not overlap due to occlusion
+                        bool isMatch = false;
+                        double matchScore = 0.0;
+                        
+                        if (distance <= this->fnMatchDistanceThreshold_){
+                            // Optional: check size similarity (similar to maxMatchSizeRange_ in findBestMatch)
+                            // Use max width to check size difference, similar to findBestMatch
+                            double predictedWidth = std::max(predictedBox.x_width, predictedBox.y_width);
+                            double currentWidth = std::max(currentBox.x_width, currentBox.y_width);
+                            
+                            // Size check: allow some size difference (similar to maxMatchSizeRange_)
+                            // If size difference is too large, skip (could be different object)
+                            if (std::abs(predictedWidth - currentWidth) < this->maxMatchSizeRange_){
+                                isMatch = true;
+                                // Match score: higher for closer distance
+                                // Normalize by distance threshold, score ranges from 1.0 (distance=0) to 0.0 (distance=threshold)
+                                matchScore = 1.0 - (distance / this->fnMatchDistanceThreshold_);
+                            }
+                        }
+                        
+                        if (isMatch){
+                            matchCount++;
+                            // Weight: more recent frames have higher weight
+                            double weight = 1.0 / (h + 1);
+                            totalMatchScore += matchScore * weight;
+                        }
+                    }
+                }
+                
+                // If matched enough historical dynamic boxes, mark as dynamic
+                if (matchCount >= this->fnMinMatchCount_){
+                    // Additional check: total match score should be above threshold
+                    double avgMatchScore = (matchCount > 0) ? (totalMatchScore / matchCount) : 0.0;
+                    if (avgMatchScore > 0.3){  // Minimum average match score
+                        this->boxHist_[idx][0].is_dynamic = true;
+                        dynamicBBoxesTemp.push_back(this->boxHist_[idx][0]);
+                        // ROS_INFO("[DEBUG] Obstacle %zu: FN recovered! matchCount=%d, avgScore=%.3f", 
+                        //          idx, matchCount, avgMatchScore);
+                    }
+                }
             }
         }
 
@@ -1818,6 +2080,16 @@ namespace onboardDetector{
         {
             std::lock_guard<std::mutex> lock(this->dynamicBBoxesMutex_);
             this->dynamicBBoxes_ = dynamicBBoxesTemp;
+        }
+        
+        // Maintain dynamicBBoxes history for FN recovery
+        // Push current frame's dynamic boxes to history (at the front)
+        this->dynamicBBoxesHist_.push_front(dynamicBBoxesTemp);
+        
+        // Limit history size (keep only recent N frames, e.g., 30 frames ≈ 1 second at 30fps)
+        int maxHistorySize = std::max(this->fnCheckFrameWindow_ * 2, 30);  // At least 2x check window or 30 frames
+        if (static_cast<int>(this->dynamicBBoxesHist_.size()) > maxHistorySize){
+            this->dynamicBBoxesHist_.pop_back();
         }
         
         // ROS_INFO("[DEBUG] ClassificationCB finished: %zu dynamic obstacles detected", dynamicBBoxesTemp.size());
@@ -3511,6 +3783,63 @@ namespace onboardDetector{
             box.z_width += robotSize(2);
             incomeDynamicBBoxes.push_back(box);
         }
+    }
+
+    void dynamicDetector::dynamicObstacleInfoCB(const onboard_detector::DynObsInfoConstPtr& dynObsInfo){
+        // Receive dynamic obstacle info (robot position)
+        this->dynamicObstaclePos_(0) = dynObsInfo->position.x;
+        this->dynamicObstaclePos_(1) = dynObsInfo->position.y;
+        this->dynamicObstaclePos_(2) = dynObsInfo->position.z;
+        this->receiveDynamicObstacleInfo_ = true;
+    }
+
+    void dynamicDetector::dynamicObstaclePubCB(const ros::TimerEvent&){
+        if (not this->receiveDynamicObstacleInfo_){
+            return;
+        }
+        double distanceRange = 4.0;
+        // Get the current robot position
+        Eigen::Vector3d currPos = this->dynamicObstaclePos_;
+
+        // Vector to store obstacles along with their distances
+        std::vector<std::pair<double, onboardDetector::box3D>> obstaclesWithDistances;
+
+        // Go through all obstacles and calculate distances
+        {
+            std::lock_guard<std::mutex> lock(this->dynamicBBoxesMutex_);
+            for (const onboardDetector::box3D& bbox : this->dynamicBBoxes_) {
+                Eigen::Vector3d obsPos(bbox.x, bbox.y, bbox.z);
+                Eigen::Vector3d diff = currPos - obsPos;
+                diff(2) = 0.;
+                double distance = diff.norm();
+                if (distance <= distanceRange) {
+                    obstaclesWithDistances.push_back(std::make_pair(distance, bbox));
+                }
+            }
+        }
+
+        // Sort obstacles by distance in ascending order
+        std::sort(obstaclesWithDistances.begin(), obstaclesWithDistances.end(), 
+                [](const std::pair<double, onboardDetector::box3D>& a, const std::pair<double, onboardDetector::box3D>& b) {
+                    return a.first < b.first;
+                });
+
+        onboard_detector::DynObsData res;
+        // Push sorted obstacles into the response
+        for (const auto& item : obstaclesWithDistances) {
+            const onboardDetector::box3D& bbox = item.second;
+
+            res.position.push_back(bbox.x);
+            res.position.push_back(bbox.y);
+            res.position.push_back(bbox.z);
+            res.velocity.push_back(bbox.Vx);
+            res.velocity.push_back(bbox.Vy);
+            res.velocity.push_back(0.);
+            res.size.push_back(bbox.x_width);
+            res.size.push_back(bbox.y_width);
+            res.size.push_back(bbox.z_width);
+        }
+        this->dynamicObstacleDataPub_.publish(res);
     }
 
     void dynamicDetector::getDynamicObstaclesHist(std::vector<std::vector<Eigen::Vector3d>>& posHist, std::vector<std::vector<Eigen::Vector3d>>& velHist, std::vector<std::vector<Eigen::Vector3d>>& sizeHist, const Eigen::Vector3d &robotSize){

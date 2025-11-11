@@ -40,6 +40,8 @@
 #include <onboard_detector/kalmanFilter.h>
 #include <onboard_detector/utils.h>
 #include <onboard_detector/GetDynamicObstacles.h>
+#include <onboard_detector/DynObsData.h>
+#include <onboard_detector/DynObsInfo.h>
 
 namespace onboardDetector{
     class dynamicDetector{
@@ -60,6 +62,7 @@ namespace onboardDetector{
         ros::Subscriber yoloDetectionSub_;
         ros::Subscriber lidarCloudSub_;
         ros::Subscriber saveLidarCloudSub_;
+        ros::Subscriber dynamicObstacleInfoSub_;
         ros::Timer detectionTimer_;
         ros::Timer lidarDetectionTimer_;
         ros::Timer trackingTimer_;
@@ -68,6 +71,7 @@ namespace onboardDetector{
         ros::Timer labelTimer_;
         ros::Timer saveTimer_;
         ros::Timer dynamicReprojectTimer_;
+        ros::Timer dynamicObstaclePubTimer_;
         image_transport::Publisher uvDepthMapPub_;
         image_transport::Publisher uDepthMapPub_;
         image_transport::Publisher uvBirdViewPub_;
@@ -93,6 +97,7 @@ namespace onboardDetector{
         ros::Publisher colorPosePub_;
         ros::Publisher lidarPosePub_;
         ros::Publisher systemTimestampPub_;  // system timestamp for frequency monitoring
+        ros::Publisher dynamicObstacleDataPub_;
         ros::ServiceServer getDynamicObstacleServer_;
     
         // DETECTOR
@@ -194,6 +199,19 @@ namespace onboardDetector{
         int forceDynaFrames_;
         int forceDynaCheckRange_;
         int dynamicConsistThresh_;
+        
+        // FP (False Positive) reduction
+        bool enableFPReduction_;  // Enable/disable FP reduction check
+        int fpCheckFrameWindow_;  // Frame window for FP check (number of frames)
+        double fpIOUThreshold_;  // IOU threshold for FP check (if average IOU > threshold, consider as static)
+        double fpDisplacementRatio_;  // Relative displacement threshold (ratio of box size)
+        double fpDisplacementMin_;  // Absolute minimum displacement threshold (meters)
+        
+        // FN (False Negative) recovery
+        bool enableFNRecovery_;  // Enable/disable FN recovery check
+        int fnCheckFrameWindow_;  // Frame window for FN check (number of historical frames to check)
+        double fnMatchDistanceThreshold_;  // Distance threshold for matching (meters, similar to maxMatchRange_)
+        int fnMinMatchCount_;  // Minimum number of historical frames that need to match
 
         // Constrain size
         bool constrainSize_;
@@ -242,6 +260,7 @@ namespace onboardDetector{
         std::vector<onboardDetector::box3D> lidarBBoxes_; // bboxes detected by lidar (have static and dynamic)
         std::vector<onboardDetector::box3D> trackedBBoxes_; // bboxes tracked from kalman filtering
         std::vector<onboardDetector::box3D> dynamicBBoxes_; // boxes classified as dynamic
+        std::deque<std::vector<onboardDetector::box3D>> dynamicBBoxesHist_; // history of dynamic boxes for FN recovery
 
         // TRACKING AND ASSOCIATION DATA
         bool newDetectFlag_;
@@ -273,6 +292,10 @@ namespace onboardDetector{
 
         double classificationTime_;
         double classificationCount_;
+        
+        // dynamic obstacle pub data info
+        Eigen::Vector3d dynamicObstaclePos_;
+        bool receiveDynamicObstacleInfo_ = false;
     
         // Thread and synchronization support
         std::mutex depthImageMutex_;              // Protect depthImage_ access
@@ -302,6 +325,10 @@ namespace onboardDetector{
         // service
 		bool getDynamicObstacles(onboard_detector::GetDynamicObstacles::Request& req, 
 								 onboard_detector::GetDynamicObstacles::Response& res);
+        
+        // dynamic obstacle pub callbacks
+        void dynamicObstacleInfoCB(const onboard_detector::DynObsInfoConstPtr& dynObsInfo);
+        void dynamicObstaclePubCB(const ros::TimerEvent&);
 
         // callback
         void depthPoseCB(const sensor_msgs::ImageConstPtr& img, const geometry_msgs::PoseStampedConstPtr& pose);
