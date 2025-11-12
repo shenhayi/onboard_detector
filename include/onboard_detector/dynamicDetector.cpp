@@ -579,6 +579,24 @@ namespace onboardDetector{
         }
         else{
             std::cout << this->hint_ << ": History for tracking is set to: " << this->histSize_ << std::endl;
+        }
+
+        // occlusion tracking window (number of frames to keep tracking unmatched boxes)
+        if (not this->nh_.getParam(this->ns_ + "/occlusion_tracking_window", this->occlusionTrackingWindow_)){
+            this->occlusionTrackingWindow_ = 30;
+            std::cout << this->hint_ << ": No occlusion tracking window parameter found. Use default: 30 frames." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Occlusion tracking window is set to: " << this->occlusionTrackingWindow_ << " frames." << std::endl;
+        }
+
+        // history size for unmatched tracked boxes (can be different from histSize_)
+        if (not this->nh_.getParam(this->ns_ + "/unmatched_box_history_size", this->unmatchedBoxHistSize_)){
+            this->unmatchedBoxHistSize_ = this->histSize_; // Default to same as histSize_
+            std::cout << this->hint_ << ": No unmatched box history size parameter found. Use default: " << this->unmatchedBoxHistSize_ << " (same as history_size)." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": Unmatched box history size is set to: " << this->unmatchedBoxHistSize_ << " frames." << std::endl;
         }  
 
         // history threshold for fixing box size
@@ -1754,11 +1772,30 @@ namespace onboardDetector{
 
         // Iterate through all pointcloud/bounding boxes history with lock protection
         std::lock_guard<std::mutex> lock(this->boxHistMutex_);
+        std::lock_guard<std::mutex> lockFiltered(this->filteredBBoxesMutex_);
         
         // NOTE: There are 3 cases which we don't need to perform dynamic obstacle identification.
         for (size_t i=0; i<this->pcHist_.size() ; ++i){
             // ROS_INFO("[DEBUG] Processing obstacle %zu: boxHist_[%zu].size()=%zu, pcHist_[%zu].size()=%zu",
             //          i, i, this->boxHist_[i].size(), i, this->pcHist_[i].size());
+            
+            // For estimated boxes (from linear propagation), check if they match current detections
+            // Estimated boxes can keep their history and dynamic status, but they should only be added
+            // to dynamicBBoxesTemp if they match actual detections, to prevent self-matching bugs
+            // IMPORTANT: Even if matched, we should NOT add the estimated box itself to dynamicBBoxesTemp
+            // Instead, the actual detection box will be classified separately and added if it's dynamic
+            if (this->boxHist_[i][0].is_estimated) {
+                // Estimated boxes should NEVER be added to dynamicBBoxesTemp directly
+                // They can keep their dynamic status in history for tracking purposes,
+                // but the actual detection boxes (filteredBBoxes or trackedBBoxes) will be classified separately
+                // This prevents estimated boxes from being published as dynamic obstacles without real detection support
+                
+                // Skip classification for estimated boxes (they don't have real point cloud data)
+                // The estimated box's dynamic status is preserved in boxHist_ for tracking purposes,
+                // but it won't be published as dynamic obstacle
+                continue;
+            }
+            
             // ===================================================================================
             // CASE I: yolo recognized as dynamic dynamic obstacle
             if (this->boxHist_[i][0].is_human){
@@ -3085,6 +3122,7 @@ namespace onboardDetector{
             this->boxHist_.resize(numObjs);
             this->pcHist_.resize(numObjs);
             this->pcCenterHist_.resize(numObjs);
+            this->unmatchedFrames_.resize(numObjs, 0); // initialize unmatched frames count to 0
             bestMatch.resize(this->filteredBBoxes_.size(), -1); // first detection no match
             for (int i=0 ; i<numObjs ; ++i){
                 // initialize history for bbox, pc and KF
@@ -3236,21 +3274,27 @@ namespace onboardDetector{
         std::deque<Eigen::Vector3d> newSinglePcCenterHist; 
         onboardDetector::kalman_filter newFilter;
         std::vector<onboardDetector::box3D> trackedBBoxesTemp;
+        std::vector<int> unmatchedFramesTemp; // track unmatched frames for each box
 
         newSingleBoxHist.resize(0);
         newSinglePcHist.resize(0);
         newSinglePcCenterHist.resize(0);
         int numObjs = this->filteredBBoxes_.size();
 
+        // Track which historical boxes were matched
+        std::vector<bool> matchedHistBoxes(this->boxHist_.size(), false);
+
         for (int i=0 ; i<numObjs ; i++){
             onboardDetector::box3D newEstimatedBBox; // from kalman filter
 
             // inheret history. push history one by one
             if (bestMatch[i]>=0){
+                matchedHistBoxes[bestMatch[i]] = true; // mark this historical box as matched
                 boxHistTemp.push_back(this->boxHist_[bestMatch[i]]);
                 pcHistTemp.push_back(this->pcHist_[bestMatch[i]]);
                 pcCenterHistTemp.push_back(this->pcCenterHist_[bestMatch[i]]);
                 filtersTemp.push_back(this->filters_[bestMatch[i]]);
+                unmatchedFramesTemp.push_back(0); // reset unmatched frame count for matched box
 
                 // kalman filter to get new state estimation
                 onboardDetector::box3D currDetectedBBox = this->filteredBBoxes_[i];
@@ -3274,6 +3318,7 @@ namespace onboardDetector{
                 newEstimatedBBox.z_width = currDetectedBBox.z_width;
                 newEstimatedBBox.is_dynamic = currDetectedBBox.is_dynamic;
                 newEstimatedBBox.is_human = currDetectedBBox.is_human;
+                newEstimatedBBox.is_estimated = false; // Clear estimated flag since we have real detection now
             }
             else{
                 boxHistTemp.push_back(newSingleBoxHist);
@@ -3288,6 +3333,8 @@ namespace onboardDetector{
                 newFilter.setup(states, A, B, H, P, Q, R);
                 filtersTemp.push_back(newFilter);
                 newEstimatedBBox = currDetectedBBox;
+                newEstimatedBBox.is_estimated = false; // New detection, not estimated
+                unmatchedFramesTemp.push_back(0); // new detection, no unmatched frames
                 
             }
 
@@ -3326,15 +3373,154 @@ namespace onboardDetector{
             }
         }
         
+        // Handle unmatched historical boxes: keep them and increment unmatched frame count
+        // Only keep boxes that were classified as dynamic in the previous frame
+        for (size_t i = 0; i < matchedHistBoxes.size(); ++i) {
+            if (!matchedHistBoxes[i]) {
+                // Only process if this box was classified as dynamic in the previous frame
+                if (this->boxHist_[i].empty() || !this->boxHist_[i][0].is_dynamic) {
+                    continue; // Skip non-dynamic boxes
+                }
+                
+                // This historical box was not matched, keep it for occlusion handling
+                int unmatchedCount = (i < this->unmatchedFrames_.size()) ? this->unmatchedFrames_[i] + 1 : 1;
+                
+                // Only keep if within occlusion window
+                if (unmatchedCount <= this->occlusionTrackingWindow_) {
+                    boxHistTemp.push_back(this->boxHist_[i]);
+                    pcHistTemp.push_back(this->pcHist_[i]);
+                    pcCenterHistTemp.push_back(this->pcCenterHist_[i]);
+                    filtersTemp.push_back(this->filters_[i]);
+                    unmatchedFramesTemp.push_back(unmatchedCount);
+                    
+                    // Use linear propagation for unmatched box
+                    if (!this->boxHist_[i].empty()) {
+                        onboardDetector::box3D propedBBox = this->boxHist_[i][0];
+                        propedBBox.x += propedBBox.Vx * this->dt_;
+                        propedBBox.y += propedBBox.Vy * this->dt_;
+                        propedBBox.is_estimated = true; // Mark as estimated/predicted box (no real detection)
+                        
+                        // Pop old data if history exceeds size limit (use unmatchedBoxHistSize_ for unmatched boxes)
+                        // When box becomes unmatched, if unmatchedBoxHistSize_ < current history size, trim it immediately
+                        // Then ensure we have space for new data (pop one more if at limit)
+                        while (int(boxHistTemp.back().size()) >= this->unmatchedBoxHistSize_) {
+                            boxHistTemp.back().pop_back();
+                            pcHistTemp.back().pop_back();
+                            pcCenterHistTemp.back().pop_back();
+                        }
+                        
+                        // Push predicted box to front of history
+                        boxHistTemp.back().push_front(propedBBox);
+                        // Clear point cloud data for estimated boxes (no real detection available)
+                        // This prevents false classification based on stale point cloud data
+                        std::vector<Eigen::Vector3d> emptyPc;
+                        pcHistTemp.back().push_front(emptyPc);
+                        if (!this->pcCenterHist_[i].empty()) {
+                            Eigen::Vector3d propedPcCenter = this->pcCenterHist_[i][0];
+                            propedPcCenter(0) += propedBBox.Vx * this->dt_;
+                            propedPcCenter(1) += propedBBox.Vy * this->dt_;
+                            pcCenterHistTemp.back().push_front(propedPcCenter);
+                        }
+                        
+                        trackedBBoxesTemp.push_back(propedBBox);
+                    }
+                }
+                // If exceeded window, box is effectively removed (not added to temp vectors)
+            }
+        }
+
         // update history member variable
         this->boxHist_ = boxHistTemp;
         this->pcHist_ = pcHistTemp;
         this->pcCenterHist_ = pcCenterHistTemp;
         this->filters_ = filtersTemp;
+        this->unmatchedFrames_ = unmatchedFramesTemp;
 
         // update tracked bounding boxes
         this->trackedBBoxes_=  trackedBBoxesTemp;
         // ROS_INFO("Finihs KalmanFilter");
+    }
+
+    void dynamicDetector::updateUnmatchedBoxesWithLinearProp(){
+        // Update unmatched tracked boxes using linear propagation for occlusion handling
+        // This function is called when there are tracked boxes but no current detections match them
+        // Only process boxes that were classified as dynamic in the previous frame
+        
+        if (this->boxHist_.empty()) {
+            return;
+        }
+
+        std::vector<std::deque<onboardDetector::box3D>> boxHistTemp;
+        std::vector<std::deque<std::vector<Eigen::Vector3d>>> pcHistTemp;
+        std::vector<std::deque<Eigen::Vector3d>> pcCenterHistTemp;
+        std::vector<onboardDetector::kalman_filter> filtersTemp;
+        std::vector<onboardDetector::box3D> trackedBBoxesTemp;
+        std::vector<int> unmatchedFramesTemp;
+
+        for (size_t i = 0; i < this->boxHist_.size(); ++i) {
+            // Only process boxes that were classified as dynamic in the previous frame
+            if (this->boxHist_[i].empty() || !this->boxHist_[i][0].is_dynamic) {
+                continue; // Skip non-dynamic boxes
+            }
+            
+            // Increment unmatched frame count
+            int unmatchedCount = (i < this->unmatchedFrames_.size()) ? this->unmatchedFrames_[i] + 1 : 1;
+            
+            // If exceeded occlusion window, skip this box (will be removed)
+            if (unmatchedCount > this->occlusionTrackingWindow_) {
+                continue; // Skip this box, effectively removing it
+            }
+
+            // Use linear propagation to predict current position
+            if (!this->boxHist_[i].empty()) {
+                onboardDetector::box3D propedBBox = this->boxHist_[i][0];
+                // Linear propagation: x = x + Vx * dt, y = y + Vy * dt
+                propedBBox.x += propedBBox.Vx * this->dt_;
+                propedBBox.y += propedBBox.Vy * this->dt_;
+                propedBBox.is_estimated = true; // Mark as estimated/predicted box (no real detection)
+                // Keep other properties (z, size, etc.) from previous frame
+                
+                // Update history: push predicted box to front
+                boxHistTemp.push_back(this->boxHist_[i]);
+                pcHistTemp.push_back(this->pcHist_[i]);
+                pcCenterHistTemp.push_back(this->pcCenterHist_[i]);
+                filtersTemp.push_back(this->filters_[i]);
+                
+                // Pop old data if history exceeds size limit (use unmatchedBoxHistSize_ for unmatched boxes)
+                // When box becomes unmatched, if unmatchedBoxHistSize_ < current history size, trim it immediately
+                // Then ensure we have space for new data (pop one more if at limit)
+                while (int(boxHistTemp.back().size()) >= this->unmatchedBoxHistSize_) {
+                    boxHistTemp.back().pop_back();
+                    pcHistTemp.back().pop_back();
+                    pcCenterHistTemp.back().pop_back();
+                }
+                
+                // Push predicted box to front of history
+                boxHistTemp.back().push_front(propedBBox);
+                // Clear point cloud data for estimated boxes (no real detection available)
+                // This prevents false classification based on stale point cloud data
+                std::vector<Eigen::Vector3d> emptyPc;
+                pcHistTemp.back().push_front(emptyPc);
+                if (!this->pcCenterHist_[i].empty()) {
+                    Eigen::Vector3d propedPcCenter = this->pcCenterHist_[i][0];
+                    propedPcCenter(0) += propedBBox.Vx * this->dt_;
+                    propedPcCenter(1) += propedBBox.Vy * this->dt_;
+                    pcCenterHistTemp.back().push_front(propedPcCenter);
+                }
+                
+                // Update tracked bounding boxes
+                trackedBBoxesTemp.push_back(propedBBox);
+                unmatchedFramesTemp.push_back(unmatchedCount);
+            }
+        }
+
+        // Update member variables
+        this->boxHist_ = boxHistTemp;
+        this->pcHist_ = pcHistTemp;
+        this->pcCenterHist_ = pcCenterHistTemp;
+        this->filters_ = filtersTemp;
+        this->trackedBBoxes_ = trackedBBoxesTemp;
+        this->unmatchedFrames_ = unmatchedFramesTemp;
     }
 
     void dynamicDetector::kalmanFilterMatrixVel(const onboardDetector::box3D& currDetectedBBox, MatrixXd& states, MatrixXd& A, MatrixXd& B, MatrixXd& H, MatrixXd& P, MatrixXd& Q, MatrixXd& R){
@@ -4209,13 +4395,13 @@ void onboardDetector::dynamicDetector::trackingClassificationThreadWorker(){
             this->boxAssociation(bestMatch);
             
             if (bestMatch.size()) {
+                // Some detections matched, update with kalman filter
                 this->kalmanFilterAndUpdateHist(bestMatch);
             } else {
-                // Only clear history if boxAssociation was actually called (not skipped)
+                // No detections in current frame, but may have tracked boxes from previous frames
+                // Use linear propagation to continue tracking unmatched boxes within occlusion window
                 if (!this->boxHist_.empty()) {
-                    this->boxHist_.clear();
-                    this->pcHist_.clear();
-                    this->pcCenterHist_.clear();
+                    this->updateUnmatchedBoxesWithLinearProp();
                 }
             }
             

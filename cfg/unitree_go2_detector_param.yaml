@@ -96,6 +96,8 @@ max_match_range: 0.5 # max match range between time steps in meters
 max_size_diff_range: 0.5 # in meter
 feature_weight: [3.0, 3.0, 0.1, 0.5, 0.5, 0.05, 0.0, 0.0, 0.0] # weight for feature 3pos + 3size + 3 pc centroid
 history_size: 100 # size of tracking history. history[0] is current detection
+unmatched_box_history_size: 100 # history size for unmatched tracked boxes (can be different from history_size)
+occlusion_tracking_window: 30 # number of frames to keep tracking unmatched boxes using linear propagation
 fix_size_history_threshold: 10 # History threshold (num of frames) to fix box size
 fix_size_dimension_threshold: 0.4 # dimension threshold (size of proportional) to fix box size
 kalman_filter_param: [0.25, 0.01, 0.05, 0.05, 0.04, 0.3, 0.6] # e_p, e_q_pos, e_q_vel, e_q_acc, e_r_pos, e_r_vel, e_r_acc
@@ -112,9 +114,9 @@ dynamic_consistency_threshold: 10 # obstacles being voted as dynamic for continu
 # FP (False Positive) reduction
 enable_fp_reduction: true  # Enable/disable FP reduction check
 fp_check_frame_window: 30  # Frame window for FP check (number of frames, approximately 1 second at 30fps)
-fp_iou_threshold: 0.80  # IOU threshold for FP check (if average IOU >= threshold, consider as static)
+fp_iou_threshold: 0.60  # IOU threshold for FP check (if average IOU >= threshold, consider as static)
 fp_displacement_ratio: 0.3  # Relative displacement threshold (ratio of box diagonal size)
-fp_displacement_min: 0.2  # Absolute minimum displacement threshold (meters)
+fp_displacement_min: 0.3  # Absolute minimum displacement threshold (meters)
 
 # FN (False Negative) recovery
 enable_fn_recovery: true  # Enable/disable FN recovery check

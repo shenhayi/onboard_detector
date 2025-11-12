@@ -268,6 +268,9 @@ namespace onboardDetector{
         std::vector<std::deque<std::vector<Eigen::Vector3d>>> pcHist_; // data association result: history of filtered pc clusteres for each pc cluster in current frame
         std::vector<std::deque<Eigen::Vector3d>> pcCenterHist_; 
         std::vector<onboardDetector::kalman_filter> filters_; // kalman filter for each objects
+        std::vector<int> unmatchedFrames_; // track number of unmatched frames for each tracked box (for occlusion handling)
+        int occlusionTrackingWindow_; // number of frames to keep tracking unmatched boxes using linear propagation
+        int unmatchedBoxHistSize_; // history size for unmatched tracked boxes (can be different from histSize_)
 
         // YOLO RESULTS
         vision_msgs::Detection2DArray yoloDetectionResults_; // yolo detected 2D results
@@ -372,6 +375,7 @@ namespace onboardDetector{
         void linearProp(std::vector<onboardDetector::box3D>& propedBoxes, std::vector<Eigen::Vector3d>& propedPcCenters);
         void findBestMatch(const std::vector<onboardDetector::box3D>& prevBBoxes, const std::vector<Eigen::VectorXd>& prevBoxesFeat, const std::vector<onboardDetector::box3D>& propedBoxes, const std::vector<Eigen::VectorXd>& propedBoxesFeat, const std::vector<Eigen::VectorXd>& currBoxesFeat, std::vector<int>& bestMatch);
         void kalmanFilterAndUpdateHist(const std::vector<int>& bestMatch);
+        void updateUnmatchedBoxesWithLinearProp(); // update unmatched boxes using linear propagation for occlusion handling
         void kalmanFilterMatrixVel(const onboardDetector::box3D& currDetectedBBox, MatrixXd& states, MatrixXd& A, MatrixXd& B, MatrixXd& H, MatrixXd& P, MatrixXd& Q, MatrixXd& R);
         void kalmanFilterMatrixAcc(const onboardDetector::box3D& currDetectedBBox, MatrixXd& states, MatrixXd& A, MatrixXd& B, MatrixXd& H, MatrixXd& P, MatrixXd& Q, MatrixXd& R);
         void getKalmanObservationVel(const onboardDetector::box3D& currDetectedBBox, int bestMatchIdx, MatrixXd& Z);
