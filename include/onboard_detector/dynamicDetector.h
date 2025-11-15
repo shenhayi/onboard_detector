@@ -206,6 +206,7 @@ namespace onboardDetector{
         double fpIOUThreshold_;  // IOU threshold for FP check (if average IOU > threshold, consider as static)
         double fpDisplacementRatio_;  // Relative displacement threshold (ratio of box size)
         double fpDisplacementMin_;  // Absolute minimum displacement threshold (meters)
+        double fpDirectionConsistencyThreshold_;  // Direction consistency threshold for displacement check (lower = more strict, 0.0-1.0)
         
         // FN (False Negative) recovery
         bool enableFNRecovery_;  // Enable/disable FN recovery check
@@ -376,6 +377,7 @@ namespace onboardDetector{
         void findBestMatch(const std::vector<onboardDetector::box3D>& prevBBoxes, const std::vector<Eigen::VectorXd>& prevBoxesFeat, const std::vector<onboardDetector::box3D>& propedBoxes, const std::vector<Eigen::VectorXd>& propedBoxesFeat, const std::vector<Eigen::VectorXd>& currBoxesFeat, std::vector<int>& bestMatch);
         void kalmanFilterAndUpdateHist(const std::vector<int>& bestMatch);
         void updateUnmatchedBoxesWithLinearProp(); // update unmatched boxes using linear propagation for occlusion handling
+        bool performFPCheck(int boxHistIdx); // unified FP check for a box in boxHist_ at given index
         void kalmanFilterMatrixVel(const onboardDetector::box3D& currDetectedBBox, MatrixXd& states, MatrixXd& A, MatrixXd& B, MatrixXd& H, MatrixXd& P, MatrixXd& Q, MatrixXd& R);
         void kalmanFilterMatrixAcc(const onboardDetector::box3D& currDetectedBBox, MatrixXd& states, MatrixXd& A, MatrixXd& B, MatrixXd& H, MatrixXd& P, MatrixXd& Q, MatrixXd& R);
         void getKalmanObservationVel(const onboardDetector::box3D& currDetectedBBox, int bestMatchIdx, MatrixXd& Z);

@@ -754,6 +754,15 @@ namespace onboardDetector{
             std::cout << this->hint_ << ": FP minimum displacement is set to: " << this->fpDisplacementMin_ << " meters." << std::endl;
         }
 
+        // FP direction consistency threshold (for checking if displacement is random jitter vs directional movement)
+        if (not this->nh_.getParam(this->ns_ + "/fp_direction_consistency_threshold", this->fpDirectionConsistencyThreshold_)){
+            this->fpDirectionConsistencyThreshold_ = 0.3;
+            std::cout << this->hint_ << ": No FP direction consistency threshold parameter found. Use default: 0.3." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": FP direction consistency threshold is set to: " << this->fpDirectionConsistencyThreshold_ << "." << std::endl;
+        }
+
         // FN (False Negative) recovery parameters
         if (not this->nh_.getParam(this->ns_ + "/enable_fn_recovery", this->enableFNRecovery_)){
             this->enableFNRecovery_ = true;
@@ -1903,93 +1912,9 @@ namespace onboardDetector{
                 
                 if (dynaConsistCount == this->dynamicConsistThresh_){
                     // ROS_INFO("[DEBUG] Obstacle %zu: CLASSIFIED AS DYNAMIC!", i);
-                    
-                    // FP (False Positive) reduction check
-                    // Two-stage check: IOU check first, then displacement check
-                    bool isFP = false;
-                    if (this->enableFPReduction_){
-                        // Calculate number of frames to check based on frame window
-                        int framesToCheck = std::min(
-                            this->fpCheckFrameWindow_, 
-                            static_cast<int>(this->boxHist_[i].size()) - 1
-                        );
-                        
-                        if (framesToCheck > 0){
-                            // Stage 1: IOU check - fast screening
-                            // Calculate average IOU between current box and historical boxes
-                            double avgIOU = 0.0;
-                            int validIOUCount = 0;
-                            
-                            for (int j = 1; j <= framesToCheck; ++j){
-                                double iou = this->calBoxIOU(this->boxHist_[i][0], this->boxHist_[i][j], false);
-                                if (iou > 0.0){  // Valid IOU (boxes overlap)
-                                    avgIOU += iou;
-                                    validIOUCount++;
-                                }
-                            }
-                            
-                            // If average IOU is very high, consider as static (FP)
-                            if (validIOUCount > 0){
-                                avgIOU /= validIOUCount;
-                                if (avgIOU >= this->fpIOUThreshold_){
-                                    isFP = true;
-                                    // ROS_INFO("[DEBUG] Obstacle %zu: FP detected by IOU! avgIOU=%.3f >= threshold=%.3f", 
-                                    //          i, avgIOU, this->fpIOUThreshold_);
-                                }
-                            }
-                            
-                            // Stage 2: Displacement check - fine-grained verification
-                            // Only perform if IOU check didn't identify as FP
-                            if (!isFP){
-                                // Calculate weighted average position from history
-                                // Use linear weighting: more recent frames have higher weights
-                                Eigen::Vector2d weightedPosSum(0.0, 0.0);
-                                double totalWeight = 0.0;
-                                
-                                for (int j = 0; j <= framesToCheck; ++j){
-                                    // Linear weight: weight = (framesToCheck + 1 - j)
-                                    // More recent frames (smaller j) have higher weights
-                                    double weight = static_cast<double>(framesToCheck + 1 - j);
-                                    weightedPosSum(0) += this->boxHist_[i][j].x * weight;
-                                    weightedPosSum(1) += this->boxHist_[i][j].y * weight;
-                                    totalWeight += weight;
-                                }
-                                
-                                Eigen::Vector2d weightedAvgPos = weightedPosSum / totalWeight;
-                                
-                                // Current position
-                                Eigen::Vector2d currentPos(this->boxHist_[i][0].x, this->boxHist_[i][0].y);
-                                
-                                // Calculate displacement in XY plane
-                                Eigen::Vector2d displacement = currentPos - weightedAvgPos;
-                                double displacementNorm = displacement.norm();
-                                
-                                // Calculate relative threshold based on box size
-                                double boxDiagonal = std::sqrt(
-                                    this->boxHist_[i][0].x_width * this->boxHist_[i][0].x_width + 
-                                    this->boxHist_[i][0].y_width * this->boxHist_[i][0].y_width
-                                );
-                                double relativeThreshold = boxDiagonal * this->fpDisplacementRatio_;
-                                
-                                // Use the maximum of relative and absolute thresholds
-                                double displacementThreshold = std::max(relativeThreshold, this->fpDisplacementMin_);
-                                
-                                // If displacement is too small, consider it as FP (static object)
-                                if (displacementNorm < displacementThreshold){
-                                    isFP = true;
-                                    // ROS_INFO("[DEBUG] Obstacle %zu: FP detected by displacement! displacement=%.3f < threshold=%.3f", 
-                                    //          i, displacementNorm, displacementThreshold);
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Only set as dynamic if not identified as FP
-                    if (!isFP){
-                        this->boxHist_[i][0].is_dynamic = true;
-                        dynamicBBoxesTemp.push_back(this->boxHist_[i][0]);
-                    }
-                    // else: skip this box (treat as static, don't add to dynamicBBoxesTemp)
+                    // Mark as dynamic, FP check will be performed later in unified check
+                    this->boxHist_[i][0].is_dynamic = true;
+                    dynamicBBoxesTemp.push_back(this->boxHist_[i][0]);
                 } else {
                     // ROS_INFO("[DEBUG] Obstacle %zu: Not consistent enough", i);
                 }
@@ -2083,6 +2008,7 @@ namespace onboardDetector{
                     // Additional check: total match score should be above threshold
                     double avgMatchScore = (matchCount > 0) ? (totalMatchScore / matchCount) : 0.0;
                     if (avgMatchScore > 0.3){  // Minimum average match score
+                        // Mark as dynamic, FP check will be performed later in unified check
                         this->boxHist_[idx][0].is_dynamic = true;
                         dynamicBBoxesTemp.push_back(this->boxHist_[idx][0]);
                         // ROS_INFO("[DEBUG] Obstacle %zu: FN recovered! matchCount=%d, avgScore=%.3f", 
@@ -2090,6 +2016,58 @@ namespace onboardDetector{
                     }
                 }
             }
+        }
+
+        // Unified FP (False Positive) reduction check
+        // Check all dynamic boxes in dynamicBBoxesTemp and remove FP ones (skip is_human boxes)
+        if (this->enableFPReduction_){
+            std::vector<onboardDetector::box3D> dynamicBBoxesAfterFPCheck;
+            
+            for (const auto& box : dynamicBBoxesTemp){
+                // Skip FP check for yolo-detected boxes (is_human) - they are trusted
+                if (box.is_human){
+                    // Keep is_human boxes without FP check
+                    dynamicBBoxesAfterFPCheck.push_back(box);
+                } else {
+                    // Find corresponding boxHist_ index by matching position and size
+                    int matchedIdx = -1;
+                    for (size_t i = 0; i < this->boxHist_.size(); ++i){
+                        if (!this->boxHist_[i].empty()){
+                            const auto& histBox = this->boxHist_[i][0];
+                            // Match by position and size (within tolerance)
+                            double distance = std::sqrt(
+                                std::pow(box.x - histBox.x, 2) + 
+                                std::pow(box.y - histBox.y, 2)
+                            );
+                            double sizeDiff = std::abs(
+                                std::max(box.x_width, box.y_width) - 
+                                std::max(histBox.x_width, histBox.y_width)
+                            );
+                            
+                            if (distance < 0.1 && sizeDiff < 0.1){ // Match found
+                                matchedIdx = i;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Perform FP check if matched box found in boxHist_
+                    if (matchedIdx >= 0){
+                        if (!this->performFPCheck(matchedIdx)){
+                            // Not FP, keep it
+                            dynamicBBoxesAfterFPCheck.push_back(box);
+                        } else {
+                            // Identified as FP, remove from dynamic
+                            this->boxHist_[matchedIdx][0].is_dynamic = false;
+                        }
+                    } else {
+                        // If not found in boxHist_, keep it (shouldn't happen, but safe fallback)
+                        dynamicBBoxesAfterFPCheck.push_back(box);
+                    }
+                }
+            }
+            
+            dynamicBBoxesTemp = dynamicBBoxesAfterFPCheck;
         }
 
         // filter the dynamic obstacles based on the target sizes
@@ -3441,6 +3419,145 @@ namespace onboardDetector{
         // ROS_INFO("Finihs KalmanFilter");
     }
 
+    bool dynamicDetector::performFPCheck(int boxHistIdx){
+        // Unified FP (False Positive) reduction check
+        // Returns true if the box is identified as FP (static object), false otherwise
+        
+        if (boxHistIdx < 0 || boxHistIdx >= static_cast<int>(this->boxHist_.size())){
+            return false; // Invalid index, not FP
+        }
+        
+        if (this->boxHist_[boxHistIdx].empty()){
+            return false; // Empty history, not FP
+        }
+        
+        // Calculate number of frames to check based on frame window
+        int framesToCheck = std::min(
+            this->fpCheckFrameWindow_, 
+            static_cast<int>(this->boxHist_[boxHistIdx].size()) - 1
+        );
+        
+        if (framesToCheck <= 0){
+            return false; // Not enough history, not FP
+        }
+        
+        // Stage 1: IOU check - fast screening
+        // Calculate average IOU between current box and historical boxes
+        double avgIOU = 0.0;
+        int validIOUCount = 0;
+        
+        for (int j = 1; j <= framesToCheck; ++j){
+            double iou = this->calBoxIOU(this->boxHist_[boxHistIdx][0], this->boxHist_[boxHistIdx][j], false);
+            if (iou > 0.0){  // Valid IOU (boxes overlap)
+                avgIOU += iou;
+                validIOUCount++;
+            }
+        }
+        
+        // If average IOU is very high, consider as static (FP)
+        if (validIOUCount > 0){
+            avgIOU /= validIOUCount;
+            if (avgIOU >= this->fpIOUThreshold_){
+                return true; // Identified as FP by IOU check
+            }
+        }
+        
+        // Stage 2: Displacement check - fine-grained verification
+        // Calculate weighted average position from history
+        // Use linear weighting: more recent frames have higher weights
+        Eigen::Vector2d weightedPosSum(0.0, 0.0);
+        double totalWeight = 0.0;
+        
+        for (int j = 0; j <= framesToCheck; ++j){
+            // Linear weight: weight = (framesToCheck + 1 - j)
+            // More recent frames (smaller j) have higher weights
+            double weight = static_cast<double>(framesToCheck + 1 - j);
+            weightedPosSum(0) += this->boxHist_[boxHistIdx][j].x * weight;
+            weightedPosSum(1) += this->boxHist_[boxHistIdx][j].y * weight;
+            totalWeight += weight;
+        }
+        
+        Eigen::Vector2d weightedAvgPos = weightedPosSum / totalWeight;
+        
+        // Current position
+        Eigen::Vector2d currentPos(this->boxHist_[boxHistIdx][0].x, this->boxHist_[boxHistIdx][0].y);
+        
+        // Calculate displacement in XY plane
+        Eigen::Vector2d displacement = currentPos - weightedAvgPos;
+        double displacementNorm = displacement.norm();
+        
+        // Calculate relative threshold based on box size
+        double boxDiagonal = std::sqrt(
+            this->boxHist_[boxHistIdx][0].x_width * this->boxHist_[boxHistIdx][0].x_width + 
+            this->boxHist_[boxHistIdx][0].y_width * this->boxHist_[boxHistIdx][0].y_width
+        );
+        double relativeThreshold = boxDiagonal * this->fpDisplacementRatio_;
+        
+        // Use the maximum of relative and absolute thresholds
+        double displacementThreshold = std::max(relativeThreshold, this->fpDisplacementMin_);
+        
+        // If displacement is too small, consider it as FP (static object)
+        if (displacementNorm < displacementThreshold){
+            return true; // Identified as FP by displacement check
+        }
+        
+        // Additional check: displacement direction consistency
+        // Static objects have random jitter (low direction consistency)
+        // Dynamic objects have directional movement (high direction consistency)
+        // Minimum history frames: based on fp_check_frame_window (at least 1/6 of window, minimum 3)
+        int minHistoryFrames = std::max(3, this->fpCheckFrameWindow_ / 6);
+        if (framesToCheck >= minHistoryFrames){
+            std::vector<Eigen::Vector2d> displacementDirections;
+            
+            // Calculate displacement vectors between consecutive frames
+            for (int j = 1; j <= framesToCheck; ++j){
+                Eigen::Vector2d disp(
+                    this->boxHist_[boxHistIdx][j-1].x - this->boxHist_[boxHistIdx][j].x,
+                    this->boxHist_[boxHistIdx][j-1].y - this->boxHist_[boxHistIdx][j].y
+                );
+                double dispNorm = disp.norm();
+                
+                // Only consider significant displacements (ignore noise)
+                if (dispNorm > 0.01){ // 1cm threshold to ignore noise
+                    displacementDirections.push_back(disp / dispNorm); // Normalize to get direction
+                }
+            }
+            
+            // Minimum valid displacement vectors: based on framesToCheck (at least 1/3 of frames, minimum 3)
+            // This ensures we have enough samples for statistical significance
+            int minValidDisplacements = std::max(3, framesToCheck / 3);
+            // Calculate direction consistency if we have enough displacement vectors
+            if (displacementDirections.size() >= minValidDisplacements){
+                double directionConsistency = 0.0;
+                int pairCount = 0;
+                
+                // Compare all pairs of displacement directions
+                for (size_t k = 0; k < displacementDirections.size() - 1; ++k){
+                    for (size_t l = k + 1; l < displacementDirections.size(); ++l){
+                        double dot = displacementDirections[k].dot(displacementDirections[l]);
+                        // Use absolute value: direction consistency is high if directions are similar (dot close to 1 or -1)
+                        directionConsistency += std::abs(dot);
+                        pairCount++;
+                    }
+                }
+                
+                if (pairCount > 0){
+                    directionConsistency /= pairCount;
+                    
+                    // If direction consistency is low (< threshold) and displacement is relatively small,
+                    // it indicates random jitter (static object)
+                    // If direction consistency is high, it indicates directional movement (dynamic object)
+                    if (directionConsistency < this->fpDirectionConsistencyThreshold_ && 
+                        displacementNorm < displacementThreshold * 1.5){
+                        return true; // Identified as FP by direction consistency check
+                    }
+                }
+            }
+        }
+        
+        return false; // Not identified as FP
+    }
+
     void dynamicDetector::updateUnmatchedBoxesWithLinearProp(){
         // Update unmatched tracked boxes using linear propagation for occlusion handling
         // This function is called when there are tracked boxes but no current detections match them
@@ -3705,6 +3822,7 @@ namespace onboardDetector{
                                    const ros::Publisher& publisher,
                                    double r, double g, double b){
         visualization_msgs::MarkerArray markers;
+        int textMarkerId = boxes.size(); // Start text marker IDs after box markers
 
         for (size_t i = 0; i < boxes.size(); i++)
         {
@@ -3757,6 +3875,32 @@ namespace onboardDetector{
             }
 
             markers.markers.push_back(line);
+            
+            // Add text label for dynamic boxes showing is_human value
+            // Check if this is the dynamicBBoxesPub_ by comparing publisher topic
+            if (&publisher == &(this->dynamicBBoxesPub_)){
+                visualization_msgs::Marker textMarker;
+                textMarker.header.frame_id = "map";
+                textMarker.header.stamp = ros::Time::now();
+                textMarker.ns = "box3D_text";
+                textMarker.id = textMarkerId++;
+                textMarker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+                textMarker.action = visualization_msgs::Marker::ADD;
+                // Position text at the top front corner of the box (corner[6] is top front right)
+                textMarker.pose.position.x = boxes[i].x + x_width / 2.0;
+                textMarker.pose.position.y = boxes[i].y + y_width / 2.0;
+                textMarker.pose.position.z = boxes[i].z + boxes[i].z_width / 2.0 + 0.2;
+                textMarker.scale.x = 0.5;
+                textMarker.scale.y = 0.5;
+                textMarker.scale.z = 0.5;
+                textMarker.color.a = 1.0;
+                textMarker.color.r = 1.0;
+                textMarker.color.g = 1.0;
+                textMarker.color.b = 0.0; // Yellow color
+                textMarker.lifetime = ros::Duration(0.05);
+                textMarker.text = "is_human=" + std::to_string(boxes[i].is_human ? 1 : 0);
+                markers.markers.push_back(textMarker);
+            }
         }
 
         publisher.publish(markers);
