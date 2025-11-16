@@ -2047,6 +2047,9 @@ namespace onboardDetector{
                     double avgMatchScore = (matchCount > 0) ? (totalMatchScore / matchCount) : 0.0;
                     if (avgMatchScore > 0.3){  // Minimum average match score
                         this->boxHist_[idx][0].is_dynamic = true;
+                        // Do not inherit is_human status from historical boxes
+                        // is_human should only be set when YOLO matches in current frame
+                        this->boxHist_[idx][0].is_human = false;
                         dynamicBBoxesTemp.push_back(this->boxHist_[idx][0]);
                         // ROS_INFO("[DEBUG] Obstacle %zu: FN recovered! matchCount=%d, avgScore=%.3f", 
                         //          idx, matchCount, avgMatchScore);
@@ -2682,6 +2685,8 @@ namespace onboardDetector{
                 auto it = box3DToYolo.find(idx3D);
                 // *Case 1: No corresponding yolo box
                 if (it == box3DToYolo.end()) {
+                    // Ensure is_human is false for boxes without YOLO match
+                    filteredBBoxesTemp[idx3D].is_human = false;
                     newFilteredBBoxes.push_back(filteredBBoxesTemp[idx3D]);
                     newFilteredPcClusters.push_back(filteredPcClustersTemp[idx3D]);
                     newFilteredPcClusterCenters.push_back(filteredPcClusterCentersTemp[idx3D]);
@@ -3181,6 +3186,9 @@ namespace onboardDetector{
             propedBBox = this->boxHist_[i][0];
             propedBBox.x += propedBBox.Vx*this->dt_;
             propedBBox.y += propedBBox.Vy*this->dt_;
+            // Do not inherit is_human status during linear propagation
+            // is_human should only be set when YOLO matches in current frame
+            propedBBox.is_human = false;
             propedBBoxes.push_back(propedBBox);
 
             Eigen::Vector3d propedPcCenter = this->pcCenterHist_[i][0];
