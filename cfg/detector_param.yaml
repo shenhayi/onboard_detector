@@ -99,6 +99,7 @@ feature_weight: [3.0, 3.0, 0.1, 0.5, 0.5, 0.05, 0, 0, 0] # weight for feagent 3p
 history_size: 100 # size of tracking history. history[0] is current detection
 unmatched_box_history_size: 100 # history size for unmatched tracked boxes (can be different from history_size)
 occlusion_tracking_window: 30 # number of frames to keep tracking unmatched boxes using linear propagation
+is_human_window: 30 # number of frames to keep is_human flag after last YOLO match (if no YOLO match within window, reset is_human to false)
 fix_size_history_threshold: 10 # History threshold (num of frames) to fix box size
 fix_size_dimension_threshold: 0.4 # dimension threshold (size of proportional) to fix box size
 kalman_filter_param: [0.25, 0.01, 0.05, 0.05, 0.04, 0.3, 0.6]

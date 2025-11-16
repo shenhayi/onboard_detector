@@ -272,6 +272,9 @@ namespace onboardDetector{
         std::vector<int> unmatchedFrames_; // track number of unmatched frames for each tracked box (for occlusion handling)
         int occlusionTrackingWindow_; // number of frames to keep tracking unmatched boxes using linear propagation
         int unmatchedBoxHistSize_; // history size for unmatched tracked boxes (can be different from histSize_)
+        std::vector<int> lastYoloMatchFrame_; // track the last frame number when each box was matched with YOLO detection (for is_human window)
+        int isHumanWindow_; // number of frames to keep is_human flag after last YOLO match
+        int currentFrame_; // current frame counter for tracking is_human window
 
         // YOLO RESULTS
         vision_msgs::Detection2DArray yoloDetectionResults_; // yolo detected 2D results

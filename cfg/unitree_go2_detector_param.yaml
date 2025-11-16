@@ -96,10 +96,11 @@ max_match_range: 0.5 # max match range between time steps in meters
 max_size_diff_range: 0.5 # in meter
 feature_weight: [3.0, 3.0, 0.1, 0.5, 0.5, 0.05, 0.0, 0.0, 0.0] # weight for feature 3pos + 3size + 3 pc centroid
 history_size: 100 # size of tracking history. history[0] is current detection
-unmatched_box_history_size: 100 # history size for unmatched tracked boxes (can be different from history_size)
+unmatched_box_history_size: 50 # history size for unmatched tracked boxes (can be different from history_size)
 occlusion_tracking_window: 30 # number of frames to keep tracking unmatched boxes using linear propagation
-fix_size_history_threshold: 10 # History threshold (num of frames) to fix box size
-fix_size_dimension_threshold: 0.4 # dimension threshold (size of proportional) to fix box size
+is_human_window: 0 # number of frames to keep is_human flag after last YOLO match (if no YOLO match within window, reset is_human to false)
+fix_size_history_threshold: 5 # History threshold (num of frames) to fix box size
+fix_size_dimension_threshold: 0.3 # dimension threshold (size of proportional) to fix box size
 kalman_filter_param: [0.25, 0.01, 0.05, 0.05, 0.04, 0.3, 0.6] # e_p, e_q_pos, e_q_vel, e_q_acc, e_r_pos, e_r_vel, e_r_acc
 kalman_filter_averaging_frames: 10
 
@@ -114,16 +115,16 @@ dynamic_consistency_threshold: 10 # obstacles being voted as dynamic for continu
 # FP (False Positive) reduction
 enable_fp_reduction: true  # Enable/disable FP reduction check
 fp_check_frame_window: 30  # Frame window for FP check (number of frames, approximately 1 second at 30fps)
-fp_iou_threshold: 0.50  # IOU threshold for FP check (if average IOU >= threshold, consider as static)
-fp_displacement_ratio: 0.25  # Relative displacement threshold (ratio of box diagonal size)
-fp_displacement_min: 0.2  # Absolute minimum displacement threshold (meters)
+fp_iou_threshold: 0.60  # IOU threshold for FP check (if average IOU >= threshold, consider as static)
+fp_displacement_ratio: 0.3  # Relative displacement threshold (ratio of box diagonal size)
+fp_displacement_min: 0.3  # Absolute minimum displacement threshold (meters)
 fp_direction_consistency_threshold: 0.4  # Direction consistency threshold for displacement check (lower = more strict, 0.0-1.0). Static objects have random jitter (low consistency), dynamic objects have directional movement (high consistency)
 
 # FN (False Negative) recovery
-enable_fn_recovery: false # Enable/disable FN recovery check
-fn_check_frame_window: 15  # Frame window for FN check (number of historical frames to check)
-fn_match_distance_threshold: 0.5 # Distance threshold for matching (meters, similar to max_match_range, no IOU required due to occlusion)
-fn_min_match_count: 5  # Minimum number of historical frames that need to match
+enable_fn_recovery: true # Enable/disable FN recovery check
+fn_check_frame_window: 30  # Frame window for FN check (number of historical frames to check)
+fn_match_distance_threshold: 1.0 # Distance threshold for matching (meters, similar to max_match_range, no IOU required due to occlusion)
+fn_min_match_count: 3 # Minimum number of historical frames that need to match
 
 # Constrain size
 target_constrain_size: true  # Filter by target size in classification stage

@@ -599,6 +599,18 @@ namespace onboardDetector{
             std::cout << this->hint_ << ": Unmatched box history size is set to: " << this->unmatchedBoxHistSize_ << " frames." << std::endl;
         }  
 
+        // is_human window: number of frames to keep is_human flag after last YOLO match
+        if (not this->nh_.getParam(this->ns_ + "/is_human_window", this->isHumanWindow_)){
+            this->isHumanWindow_ = 30; // Default: 30 frames (approximately 1 second at 30fps)
+            std::cout << this->hint_ << ": No is_human window parameter found. Use default: 30 frames." << std::endl;
+        }
+        else{
+            std::cout << this->hint_ << ": is_human window is set to: " << this->isHumanWindow_ << " frames." << std::endl;
+        }
+
+        // Initialize frame counter
+        this->currentFrame_ = 0;
+
         // history threshold for fixing box size
         if (not this->nh_.getParam(this->ns_ + "/fix_size_history_threshold", this->fixSizeHistThresh_)){
             this->fixSizeHistThresh_ = 10;
@@ -2010,6 +2022,8 @@ namespace onboardDetector{
                     if (avgMatchScore > 0.3){  // Minimum average match score
                         // Mark as dynamic, FP check will be performed later in unified check
                         this->boxHist_[idx][0].is_dynamic = true;
+                        // Do not inherit is_human status from historical boxes
+                        this->boxHist_[idx][0].is_human = false;
                         dynamicBBoxesTemp.push_back(this->boxHist_[idx][0]);
                         // ROS_INFO("[DEBUG] Obstacle %zu: FN recovered! matchCount=%d, avgScore=%.3f", 
                         //          idx, matchCount, avgMatchScore);
@@ -3101,12 +3115,17 @@ namespace onboardDetector{
             this->pcHist_.resize(numObjs);
             this->pcCenterHist_.resize(numObjs);
             this->unmatchedFrames_.resize(numObjs, 0); // initialize unmatched frames count to 0
+            this->lastYoloMatchFrame_.resize(numObjs, -1); // initialize last YOLO match frame to -1 (not matched yet)
             bestMatch.resize(this->filteredBBoxes_.size(), -1); // first detection no match
             for (int i=0 ; i<numObjs ; ++i){
                 // initialize history for bbox, pc and KF
                 this->boxHist_[i].push_back(this->filteredBBoxes_[i]);
                 this->pcHist_[i].push_back(this->filteredPcClusters_[i]);
                 this->pcCenterHist_[i].push_back(this->filteredPcClusterCenters_[i]);
+                // If box is marked as human by YOLO, record current frame
+                if (this->filteredBBoxes_[i].is_human){
+                    this->lastYoloMatchFrame_[i] = this->currentFrame_;
+                }
                 MatrixXd states, A, B, H, P, Q, R;       
                 this->kalmanFilterMatrixAcc(this->filteredBBoxes_[i], states, A, B, H, P, Q, R);
                 onboardDetector::kalman_filter newFilter;
@@ -3253,6 +3272,7 @@ namespace onboardDetector{
         onboardDetector::kalman_filter newFilter;
         std::vector<onboardDetector::box3D> trackedBBoxesTemp;
         std::vector<int> unmatchedFramesTemp; // track unmatched frames for each box
+        std::vector<int> lastYoloMatchFrameTemp; // track last YOLO match frame for each box
 
         newSingleBoxHist.resize(0);
         newSinglePcHist.resize(0);
@@ -3297,6 +3317,23 @@ namespace onboardDetector{
                 newEstimatedBBox.is_dynamic = currDetectedBBox.is_dynamic;
                 newEstimatedBBox.is_human = currDetectedBBox.is_human;
                 newEstimatedBBox.is_estimated = false; // Clear estimated flag since we have real detection now
+                
+                // Update last YOLO match frame if current detection is marked as human
+                if (currDetectedBBox.is_human){
+                    lastYoloMatchFrameTemp.push_back(this->currentFrame_);
+                } else {
+                    // Inherit last YOLO match frame from historical box
+                    int lastMatchFrame = (bestMatch[i] < static_cast<int>(this->lastYoloMatchFrame_.size())) 
+                                        ? this->lastYoloMatchFrame_[bestMatch[i]] : -1;
+                    lastYoloMatchFrameTemp.push_back(lastMatchFrame);
+                    
+                    // Check if is_human window has expired
+                    if (lastMatchFrame >= 0 && (this->currentFrame_ - lastMatchFrame) > this->isHumanWindow_){
+                        // Window expired, reset is_human flag
+                        newEstimatedBBox.is_human = false;
+                        lastYoloMatchFrameTemp.back() = -1; // Reset match frame
+                    }
+                }
             }
             else{
                 boxHistTemp.push_back(newSingleBoxHist);
@@ -3314,6 +3351,12 @@ namespace onboardDetector{
                 newEstimatedBBox.is_estimated = false; // New detection, not estimated
                 unmatchedFramesTemp.push_back(0); // new detection, no unmatched frames
                 
+                // If new box is marked as human by YOLO, record current frame
+                if (currDetectedBBox.is_human){
+                    lastYoloMatchFrameTemp.push_back(this->currentFrame_);
+                } else {
+                    lastYoloMatchFrameTemp.push_back(-1); // Not matched with YOLO yet
+                }
             }
 
             // pop old data if len of hist > size limit
@@ -3378,6 +3421,18 @@ namespace onboardDetector{
                         propedBBox.y += propedBBox.Vy * this->dt_;
                         propedBBox.is_estimated = true; // Mark as estimated/predicted box (no real detection)
                         
+                        // Check if is_human window has expired for unmatched box
+                        int lastMatchFrame = (i < static_cast<int>(this->lastYoloMatchFrame_.size())) 
+                                            ? this->lastYoloMatchFrame_[i] : -1;
+                        if (lastMatchFrame >= 0 && (this->currentFrame_ - lastMatchFrame) > this->isHumanWindow_){
+                            // Window expired, reset is_human flag
+                            propedBBox.is_human = false;
+                            lastYoloMatchFrameTemp.push_back(-1); // Reset match frame
+                        } else {
+                            // Inherit last YOLO match frame
+                            lastYoloMatchFrameTemp.push_back(lastMatchFrame);
+                        }
+                        
                         // Pop old data if history exceeds size limit (use unmatchedBoxHistSize_ for unmatched boxes)
                         // When box becomes unmatched, if unmatchedBoxHistSize_ < current history size, trim it immediately
                         // Then ensure we have space for new data (pop one more if at limit)
@@ -3389,6 +3444,10 @@ namespace onboardDetector{
                         
                         // Push predicted box to front of history
                         boxHistTemp.back().push_front(propedBBox);
+                        // Update is_human in history if window expired
+                        if (lastMatchFrame >= 0 && (this->currentFrame_ - lastMatchFrame) > this->isHumanWindow_){
+                            boxHistTemp.back()[0].is_human = false;
+                        }
                         // Clear point cloud data for estimated boxes (no real detection available)
                         // This prevents false classification based on stale point cloud data
                         std::vector<Eigen::Vector3d> emptyPc;
@@ -3413,6 +3472,7 @@ namespace onboardDetector{
         this->pcCenterHist_ = pcCenterHistTemp;
         this->filters_ = filtersTemp;
         this->unmatchedFrames_ = unmatchedFramesTemp;
+        this->lastYoloMatchFrame_ = lastYoloMatchFrameTemp;
 
         // update tracked bounding boxes
         this->trackedBBoxes_=  trackedBBoxesTemp;
@@ -3573,6 +3633,7 @@ namespace onboardDetector{
         std::vector<onboardDetector::kalman_filter> filtersTemp;
         std::vector<onboardDetector::box3D> trackedBBoxesTemp;
         std::vector<int> unmatchedFramesTemp;
+        std::vector<int> lastYoloMatchFrameTemp;
 
         for (size_t i = 0; i < this->boxHist_.size(); ++i) {
             // Only process boxes that were classified as dynamic in the previous frame
@@ -3597,6 +3658,18 @@ namespace onboardDetector{
                 propedBBox.is_estimated = true; // Mark as estimated/predicted box (no real detection)
                 // Keep other properties (z, size, etc.) from previous frame
                 
+                // Check if is_human window has expired
+                int lastMatchFrame = (i < static_cast<int>(this->lastYoloMatchFrame_.size())) 
+                                    ? this->lastYoloMatchFrame_[i] : -1;
+                if (lastMatchFrame >= 0 && (this->currentFrame_ - lastMatchFrame) > this->isHumanWindow_){
+                    // Window expired, reset is_human flag
+                    propedBBox.is_human = false;
+                    lastYoloMatchFrameTemp.push_back(-1); // Reset match frame
+                } else {
+                    // Inherit last YOLO match frame
+                    lastYoloMatchFrameTemp.push_back(lastMatchFrame);
+                }
+                
                 // Update history: push predicted box to front
                 boxHistTemp.push_back(this->boxHist_[i]);
                 pcHistTemp.push_back(this->pcHist_[i]);
@@ -3614,6 +3687,10 @@ namespace onboardDetector{
                 
                 // Push predicted box to front of history
                 boxHistTemp.back().push_front(propedBBox);
+                // Update is_human in history if window expired
+                if (lastMatchFrame >= 0 && (this->currentFrame_ - lastMatchFrame) > this->isHumanWindow_){
+                    boxHistTemp.back()[0].is_human = false;
+                }
                 // Clear point cloud data for estimated boxes (no real detection available)
                 // This prevents false classification based on stale point cloud data
                 std::vector<Eigen::Vector3d> emptyPc;
@@ -3638,6 +3715,7 @@ namespace onboardDetector{
         this->filters_ = filtersTemp;
         this->trackedBBoxes_ = trackedBBoxesTemp;
         this->unmatchedFrames_ = unmatchedFramesTemp;
+        this->lastYoloMatchFrame_ = lastYoloMatchFrameTemp;
     }
 
     void dynamicDetector::kalmanFilterMatrixVel(const onboardDetector::box3D& currDetectedBBox, MatrixXd& states, MatrixXd& A, MatrixXd& B, MatrixXd& H, MatrixXd& P, MatrixXd& Q, MatrixXd& R){
@@ -3879,6 +3957,30 @@ namespace onboardDetector{
             // Add text label for dynamic boxes showing is_human value
             // Check if this is the dynamicBBoxesPub_ by comparing publisher topic
             if (&publisher == &(this->dynamicBBoxesPub_)){
+                visualization_msgs::Marker textMarker;
+                textMarker.header.frame_id = "map";
+                textMarker.header.stamp = ros::Time::now();
+                textMarker.ns = "box3D_text";
+                textMarker.id = textMarkerId++;
+                textMarker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+                textMarker.action = visualization_msgs::Marker::ADD;
+                // Position text at the top front corner of the box (corner[6] is top front right)
+                textMarker.pose.position.x = boxes[i].x + x_width / 2.0;
+                textMarker.pose.position.y = boxes[i].y + y_width / 2.0;
+                textMarker.pose.position.z = boxes[i].z + boxes[i].z_width / 2.0 + 0.2;
+                textMarker.scale.x = 0.5;
+                textMarker.scale.y = 0.5;
+                textMarker.scale.z = 0.5;
+                textMarker.color.a = 1.0;
+                textMarker.color.r = 1.0;
+                textMarker.color.g = 1.0;
+                textMarker.color.b = 0.0; // Yellow color
+                textMarker.lifetime = ros::Duration(0.05);
+                textMarker.text = "is_human=" + std::to_string(boxes[i].is_human ? 1 : 0);
+                markers.markers.push_back(textMarker);
+            }
+            // Add text label for tracked boxes showing is_human value
+            else if (&publisher == &(this->trackedBBoxesPub_)){
                 visualization_msgs::Marker textMarker;
                 textMarker.header.frame_id = "map";
                 textMarker.header.stamp = ros::Time::now();
@@ -4535,6 +4637,9 @@ void onboardDetector::dynamicDetector::trackingClassificationThreadWorker(){
         {
             std::lock_guard<std::mutex> lockFiltered(this->filteredBBoxesMutex_);
             std::lock_guard<std::mutex> lockBoxHist(this->boxHistMutex_);
+            
+            // Increment frame counter for is_human window tracking
+            this->currentFrame_++;
             
             this->boxAssociation(bestMatch);
             
