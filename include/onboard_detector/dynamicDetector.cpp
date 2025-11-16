@@ -3519,6 +3519,7 @@ namespace onboardDetector{
                                    const ros::Publisher& publisher,
                                    double r, double g, double b){
         visualization_msgs::MarkerArray markers;
+        int textMarkerId = boxes.size(); // Start text marker IDs after box markers
 
         for (size_t i = 0; i < boxes.size(); i++)
         {
@@ -3571,6 +3572,56 @@ namespace onboardDetector{
             }
 
             markers.markers.push_back(line);
+            
+            // Add text label for dynamic boxes showing is_human value
+            // Check if this is the dynamicBBoxesPub_ by comparing publisher topic
+            if (&publisher == &(this->dynamicBBoxesPub_)){
+                visualization_msgs::Marker textMarker;
+                textMarker.header.frame_id = "map";
+                textMarker.header.stamp = ros::Time::now();
+                textMarker.ns = "box3D_text";
+                textMarker.id = textMarkerId++;
+                textMarker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+                textMarker.action = visualization_msgs::Marker::ADD;
+                // Position text at the top front corner of the box (corner[6] is top front right)
+                textMarker.pose.position.x = boxes[i].x + x_width / 2.0;
+                textMarker.pose.position.y = boxes[i].y + y_width / 2.0;
+                textMarker.pose.position.z = boxes[i].z + boxes[i].z_width / 2.0 + 0.2;
+                textMarker.scale.x = 0.5;
+                textMarker.scale.y = 0.5;
+                textMarker.scale.z = 0.5;
+                textMarker.color.a = 1.0;
+                textMarker.color.r = 1.0;
+                textMarker.color.g = 1.0;
+                textMarker.color.b = 0.0; // Yellow color
+                textMarker.lifetime = ros::Duration(0.05);
+                textMarker.text = "is_human=" + std::to_string(boxes[i].is_human ? 1 : 0);
+                markers.markers.push_back(textMarker);
+            }
+            // Add text label for tracked boxes showing is_human value
+            else if (&publisher == &(this->trackedBBoxesPub_)){
+                visualization_msgs::Marker textMarker;
+                textMarker.header.frame_id = "map";
+                textMarker.header.stamp = ros::Time::now();
+                textMarker.ns = "box3D_text";
+                textMarker.id = textMarkerId++;
+                textMarker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+                textMarker.action = visualization_msgs::Marker::ADD;
+                // Position text at the top front corner of the box (corner[6] is top front right)
+                textMarker.pose.position.x = boxes[i].x + x_width / 2.0;
+                textMarker.pose.position.y = boxes[i].y + y_width / 2.0;
+                textMarker.pose.position.z = boxes[i].z + boxes[i].z_width / 2.0 + 0.2;
+                textMarker.scale.x = 0.5;
+                textMarker.scale.y = 0.5;
+                textMarker.scale.z = 0.5;
+                textMarker.color.a = 1.0;
+                textMarker.color.r = 1.0;
+                textMarker.color.g = 1.0;
+                textMarker.color.b = 0.0; // Yellow color
+                textMarker.lifetime = ros::Duration(0.05);
+                textMarker.text = "is_human=" + std::to_string(boxes[i].is_human ? 1 : 0);
+                markers.markers.push_back(textMarker);
+            }
         }
 
         publisher.publish(markers);

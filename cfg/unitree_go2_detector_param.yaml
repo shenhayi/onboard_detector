@@ -104,7 +104,7 @@ kalman_filter_averaging_frames: 10
 # Classification
 frame_skip: 5 # num of frames skiped when comparing 2 point clouds
 dynamic_velocity_threshold: 0.15
-dynamic_voting_threshold: 0.7
+dynamic_voting_threshold: 0.75
 frames_force_dynamic: 10 # Range of searching dynamic obstacles in box history
 frames_force_dynamic_check_range: 30 # threshold for forcing dynamic obstacles
 dynamic_consistency_threshold: 10 # obstacles being voted as dynamic for continuous k frames are eligible to be classified as dynamic
@@ -112,7 +112,7 @@ dynamic_consistency_threshold: 10 # obstacles being voted as dynamic for continu
 # FP (False Positive) reduction
 enable_fp_reduction: true  # Enable/disable FP reduction check
 fp_check_frame_window: 30  # Frame window for FP check (number of frames, approximately 1 second at 30fps)
-fp_iou_threshold: 0.80  # IOU threshold for FP check (if average IOU >= threshold, consider as static)
+fp_iou_threshold: 0.60  # IOU threshold for FP check (if average IOU >= threshold, consider as static)
 fp_displacement_ratio: 0.3  # Relative displacement threshold (ratio of box diagonal size)
 fp_displacement_min: 0.2  # Absolute minimum displacement threshold (meters)
 
